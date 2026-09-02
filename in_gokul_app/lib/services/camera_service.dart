@@ -21,12 +21,14 @@ class CameraService {
     if (isInitialized) return true;
 
     try {
-      // 1. Request camera permission
-      final status = await Permission.camera.request();
-      if (!status.isGranted) {
-        _errorMessage = 'Camera permission was denied. Please grant permission in App Settings.';
-        debugPrint(_errorMessage);
-        return false;
+      // 1. Request camera permission on mobile platforms
+      if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS)) {
+        final status = await Permission.camera.request();
+        if (!status.isGranted) {
+          _errorMessage = 'Camera permission was denied. Please grant permission in App Settings.';
+          debugPrint(_errorMessage);
+          return false;
+        }
       }
 
       // 2. Discover available cameras
