@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:vector_math/vector_math_64.dart';
 import '../models/node.dart';
@@ -187,9 +186,30 @@ class NavigationController extends ChangeNotifier {
         yawRadians: yaw,
       );
     } else if (positionProvider is NativeArPositionProvider) {
-      (positionProvider as NativeArPositionProvider).updateManualPose(simulatedPose);
+      (positionProvider as NativeArPositionProvider).stepTowards(targetWorld, stepMeters: stepMeters);
     } else {
       _onPoseReceived(simulatedPose);
+    }
+  }
+
+  /// Manually advances to next waypoint along the path
+  void advanceToNextWaypoint() {
+    final target = nextTargetNode;
+    if (target == null || isFinished) return;
+
+    final targetWorld = alignmentService.transformJsonToWorld(target);
+    if (positionProvider is NativeArPositionProvider) {
+      (positionProvider as NativeArPositionProvider).setPosition(targetWorld);
+    }
+
+    if (_currentStepIndex < path.length - 1) {
+      _currentStepIndex++;
+      if (_currentStepIndex >= path.length - 1) {
+        _state = NavigationState.destinationReached;
+      } else {
+        _state = NavigationState.navigating;
+      }
+      notifyListeners();
     }
   }
 

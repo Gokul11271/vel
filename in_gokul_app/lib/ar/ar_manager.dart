@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:vector_math/vector_math_64.dart';
 import '../models/pose.dart';
 import '../models/node.dart';
 import '../services/world_alignment_service.dart';
