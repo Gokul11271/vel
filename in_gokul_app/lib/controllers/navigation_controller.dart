@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:vector_math/vector_math_64.dart';
+import '../models/graph.dart';
 import '../models/node.dart';
 import '../models/pose.dart';
 import '../models/navigation_state.dart';
@@ -11,26 +12,48 @@ import '../tracking/native_ar_position_provider.dart';
 import '../tracking/simulation_position_provider.dart';
 
 class NavigationController extends ChangeNotifier {
-  final List<Node> path;
+  List<Node> path;
   final PositionProvider positionProvider;
   final WorldAlignmentService alignmentService;
 
-  // Adaptive arrival thresholds (Change #6)
+  // ── Arrival thresholds ──────────────────────────────────────────────────────
+  /// Distance to auto-advance past an intermediate waypoint (meters).
   final double waypointArrivalThreshold;
+
+  /// Distance to declare "destination reached" for the final node (meters).
   final double destinationArrivalThreshold;
 
+  // ── Off-route detection ─────────────────────────────────────────────────────
+  /// If the user's distance to the next waypoint exceeds this, consider off-route.
+  static const double _offRouteThresholdM = 4.5;
+
+  /// Number of consecutive pose readings beyond threshold before recalculating.
+  static const int _offRouteFrameLimit = 20;
+  int _offRouteFrames = 0;
+
+  // ── State ───────────────────────────────────────────────────────────────────
   int _currentStepIndex = 0;
   NavigationState _state = NavigationState.initializing;
   Pose _latestPose = Pose.identity();
   StreamSubscription<Pose>? _poseSubscription;
 
+  /// Optional graph for re-routing. Set after construction if you want
+  /// off-route Dijkstra recalculation.
+  Graph? graph;
+
+  /// Fires when the controller auto-recalculates a new route.
+  /// The caller may update UI accordingly.
+  VoidCallback? onRouteRecalculated;
+
   NavigationController({
     required DijkstraResult routeResult,
     required this.positionProvider,
     required this.alignmentService,
-    this.waypointArrivalThreshold = 0.8, // 0.8m for intermediate turns
-    this.destinationArrivalThreshold = 1.5, // 1.5m for final rooms/doors
-  }) : path = routeResult.path {
+    this.waypointArrivalThreshold = 2.0,  // 2.0m for intermediate waypoints
+    this.destinationArrivalThreshold = 3.0, // 3.0m for final destination
+    this.graph,
+    this.onRouteRecalculated,
+  }) : path = List.from(routeResult.path) {
     _init();
   }
 
@@ -39,12 +62,12 @@ class NavigationController extends ChangeNotifier {
       _state = NavigationState.destinationReached;
       return;
     }
-
     _state = NavigationState.waitingForTracking;
     _poseSubscription = positionProvider.poseStream.listen(_onPoseReceived);
   }
 
-  // Getters
+  // ── Getters ─────────────────────────────────────────────────────────────────
+
   NavigationState get state => _state;
   int get currentStepIndex => _currentStepIndex;
   Pose get latestPose => _latestPose;
@@ -53,7 +76,11 @@ class NavigationController extends ChangeNotifier {
   bool get isNavigating => _state == NavigationState.navigating;
 
   Node? get startNode => path.isNotEmpty ? path.first : null;
-  Node? get currentNode => path.isNotEmpty && _currentStepIndex < path.length ? path[_currentStepIndex] : null;
+
+  Node? get currentNode =>
+      path.isNotEmpty && _currentStepIndex < path.length
+          ? path[_currentStepIndex]
+          : null;
 
   Node? get nextTargetNode {
     if (path.isEmpty || _currentStepIndex >= path.length - 1) return null;
@@ -62,17 +89,16 @@ class NavigationController extends ChangeNotifier {
 
   Node? get finalDestination => path.isNotEmpty ? path.last : null;
 
-  /// Distance from current user AR position to next target waypoint
+  /// 3D distance from current AR position to next waypoint.
   double get distanceToNextTarget {
     final target = nextTargetNode;
     if (target == null) return 0.0;
     return alignmentService.getDistanceToNode(_latestPose.position, target);
   }
 
-  /// Total remaining distance across all subsequent path legs
+  /// Total remaining distance across all path legs ahead.
   double get totalDistanceRemaining {
     if (isFinished || nextTargetNode == null) return 0.0;
-
     double dist = distanceToNextTarget;
     for (int i = _currentStepIndex + 1; i < path.length - 1; i++) {
       dist += path[i].distanceTo(path[i + 1]);
@@ -80,30 +106,30 @@ class NavigationController extends ChangeNotifier {
     return dist;
   }
 
-  /// Starts calibration state
+  // ── Calibration ──────────────────────────────────────────────────────────────
+
   void beginCalibration() {
     _state = NavigationState.calibrating;
     notifyListeners();
   }
 
-  /// Completes calibration with the alignment service and transitions to navigating
   void completeCalibration() {
     if (startNode == null) return;
-
     alignmentService.calibrate(
       startNode: startNode!,
       currentPose: _latestPose,
       targetNode: nextTargetNode,
     );
-
     _state = NavigationState.navigating;
     notifyListeners();
   }
 
+  // ── Pose Handler ────────────────────────────────────────────────────────────
+
   void _onPoseReceived(Pose pose) {
     _latestPose = pose;
 
-    // Handle tracking state anomalies
+    // Tracking state changes
     if (pose.trackingState == TrackingState.lost) {
       if (_state == NavigationState.navigating) {
         _state = NavigationState.trackingLost;
@@ -115,10 +141,33 @@ class NavigationController extends ChangeNotifier {
     }
 
     if (_state == NavigationState.navigating) {
+      // 1. Check if user went directly to final destination (skipping nodes)
+      _checkDirectDestination();
+
+      // 2. Check normal waypoint progression
       _checkWaypointProgression();
+
+      // 3. Off-route detection
+      _checkOffRoute();
     }
 
     notifyListeners();
+  }
+
+  /// Always check proximity to the final destination, regardless of which
+  /// step we're on. This fixes the issue where the user arrives at the
+  /// destination but hasn't passed all intermediate nodes.
+  void _checkDirectDestination() {
+    if (path.isEmpty) return;
+    final destination = path.last;
+    final destDist =
+        alignmentService.getDistanceToNode(_latestPose.position, destination);
+
+    if (destDist <= destinationArrivalThreshold) {
+      _currentStepIndex = path.length - 1;
+      _state = NavigationState.destinationReached;
+      notifyListeners();
+    }
   }
 
   void _checkWaypointProgression() {
@@ -128,19 +177,20 @@ class NavigationController extends ChangeNotifier {
       return;
     }
 
-    final isLastWaypoint = _currentStepIndex == path.length - 2;
-    final threshold = isLastWaypoint ? destinationArrivalThreshold : waypointArrivalThreshold;
-
-    final dist = alignmentService.getDistanceToNode(_latestPose.position, target);
+    final isLastLeg = _currentStepIndex == path.length - 2;
+    final threshold =
+        isLastLeg ? destinationArrivalThreshold : waypointArrivalThreshold;
+    final dist =
+        alignmentService.getDistanceToNode(_latestPose.position, target);
 
     if (dist <= threshold) {
-      if (isLastWaypoint) {
-        _currentStepIndex++;
+      _currentStepIndex++;
+      _offRouteFrames = 0; // reset off-route counter on progress
+
+      if (_currentStepIndex >= path.length - 1) {
         _state = NavigationState.destinationReached;
       } else {
-        _currentStepIndex++;
         _state = NavigationState.waypointReached;
-        // Auto transition back to navigating next frame
         Future.microtask(() {
           if (_state == NavigationState.waypointReached) {
             _state = NavigationState.navigating;
@@ -152,7 +202,65 @@ class NavigationController extends ChangeNotifier {
     }
   }
 
-  /// Simulates stepping along the path when testing on simulator / emulator
+  /// Detects if the user is drifting away from the planned route and
+  /// triggers a Dijkstra recalculation from the nearest graph node.
+  void _checkOffRoute() {
+    final target = nextTargetNode;
+    if (target == null || graph == null) return;
+
+    final distToNext = distanceToNextTarget;
+
+    if (distToNext > _offRouteThresholdM) {
+      _offRouteFrames++;
+      if (_offRouteFrames >= _offRouteFrameLimit) {
+        _offRouteFrames = 0;
+        _recalculateRoute();
+      }
+    } else {
+      _offRouteFrames = 0;
+    }
+  }
+
+  /// Finds the nearest graph node to current position and recalculates
+  /// the Dijkstra path from there to the final destination.
+  void _recalculateRoute() {
+    final g = graph;
+    if (g == null || path.isEmpty) return;
+
+    final destination = path.last;
+    final currentJsonPos =
+        alignmentService.transformWorldToJson(_latestPose.position);
+
+    // Find nearest graph node to current world position
+    Node? nearest;
+    double nearestDist = double.infinity;
+    for (final node in g.nodes.values) {
+      final d = (currentJsonPos - Vector3(node.x, node.y, node.z)).length;
+      if (d < nearestDist) {
+        nearestDist = d;
+        nearest = node;
+      }
+    }
+
+    if (nearest == null || nearest.id == destination.id) return;
+
+    final result =
+        Dijkstra.findShortestPath(g, nearest.id, destination.id);
+
+    if (result.path.isEmpty) return;
+
+    // Rebuild path: current step stays, replace remainder with new route
+    path = List.from(result.path);
+    _currentStepIndex = 0;
+    _state = NavigationState.navigating;
+    notifyListeners();
+    onRouteRecalculated?.call();
+
+    debugPrint('🔄 Route recalculated via ${nearest.name} → ${destination.name}');
+  }
+
+  // ── Simulation helpers (for testing) ────────────────────────────────────────
+
   void simulateStep({double stepMeters = 0.5}) {
     final target = nextTargetNode;
     if (target == null || isFinished) return;
@@ -167,48 +275,40 @@ class NavigationController extends ChangeNotifier {
     } else {
       newPos = _latestPose.position + (delta * (stepMeters / dist));
     }
+    final yaw = delta.length2 > 0
+        ? alignmentService.getBearingToNode(_latestPose.position, target)
+        : _latestPose.yawRadians;
 
-    final yaw = delta.length2 > 0 ? alignmentService.getBearingToNode(_latestPose.position, target) : _latestPose.yawRadians;
-
-    final simulatedPose = Pose.fromValues(
-      x: newPos.x,
-      y: newPos.y,
-      z: newPos.z,
-      yawRadians: yaw,
-      trackingState: TrackingState.good,
-    );
-
-    if (positionProvider is SimulationPositionProvider) {
-      (positionProvider as SimulationPositionProvider).setPosition(
+    final simPose = Pose.fromValues(
         x: newPos.x,
         y: newPos.y,
         z: newPos.z,
         yawRadians: yaw,
-      );
+        trackingState: TrackingState.good);
+
+    if (positionProvider is SimulationPositionProvider) {
+      (positionProvider as SimulationPositionProvider)
+          .setPosition(x: newPos.x, y: newPos.y, z: newPos.z, yawRadians: yaw);
     } else if (positionProvider is NativeArPositionProvider) {
-      (positionProvider as NativeArPositionProvider).stepTowards(targetWorld, stepMeters: stepMeters);
+      (positionProvider as NativeArPositionProvider)
+          .stepTowards(targetWorld, stepMeters: stepMeters);
     } else {
-      _onPoseReceived(simulatedPose);
+      _onPoseReceived(simPose);
     }
   }
 
-  /// Manually advances to next waypoint along the path
   void advanceToNextWaypoint() {
     final target = nextTargetNode;
     if (target == null || isFinished) return;
-
     final targetWorld = alignmentService.transformJsonToWorld(target);
     if (positionProvider is NativeArPositionProvider) {
       (positionProvider as NativeArPositionProvider).setPosition(targetWorld);
     }
-
     if (_currentStepIndex < path.length - 1) {
       _currentStepIndex++;
-      if (_currentStepIndex >= path.length - 1) {
-        _state = NavigationState.destinationReached;
-      } else {
-        _state = NavigationState.navigating;
-      }
+      _state = _currentStepIndex >= path.length - 1
+          ? NavigationState.destinationReached
+          : NavigationState.navigating;
       notifyListeners();
     }
   }

@@ -71,12 +71,16 @@ class _CalibrationScreenState extends State<CalibrationScreen> with SingleTicker
     }
   }
 
+  bool _navigatedToAr = false;
+
   @override
   void dispose() {
     _pulseController.dispose();
-    _controller.dispose();
-    _positionProvider.dispose();
-    _arManager.dispose();
+    if (!_navigatedToAr) {
+      _controller.dispose();
+      _positionProvider.dispose();
+      _arManager.dispose();
+    }
     super.dispose();
   }
 
@@ -89,6 +93,8 @@ class _CalibrationScreenState extends State<CalibrationScreen> with SingleTicker
     _controller.completeCalibration();
     _arManager.setTargetNode(_controller.nextTargetNode);
 
+    _navigatedToAr = true;
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('✅ World Alignment Calibrated Successfully!'),
@@ -97,7 +103,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> with SingleTicker
       ),
     );
 
-    Future.delayed(const Duration(milliseconds: 500), () {
+    Future.delayed(const Duration(milliseconds: 400), () {
       if (!mounted) return;
       Navigator.pushReplacement(
         context,

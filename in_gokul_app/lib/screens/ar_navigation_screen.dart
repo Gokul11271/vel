@@ -1,12 +1,18 @@
 import 'dart:math';
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../controllers/navigation_controller.dart';
 import '../models/navigation_state.dart';
 import '../models/pose.dart';
 import '../models/node.dart';
 import '../ar/ar_manager.dart';
+import '../ar/ar_path_painter.dart';
 import '../services/camera_service.dart';
+import '../tracking/native_ar_position_provider.dart';
+import '../widgets/debug_overlay.dart';
+import '../widgets/fps_counter.dart';
+import 'success_screen.dart';
 
 class ArNavigationScreen extends StatefulWidget {
   final NavigationController controller;
@@ -26,19 +32,30 @@ class ArNavigationScreen extends StatefulWidget {
   State<ArNavigationScreen> createState() => _ArNavigationScreenState();
 }
 
-class _ArNavigationScreenState extends State<ArNavigationScreen> with SingleTickerProviderStateMixin {
+class _ArNavigationScreenState extends State<ArNavigationScreen>
+    with TickerProviderStateMixin {
   late AnimationController _pulseController;
+  late AnimationController _flashController;
   final CameraService _cameraService = CameraService();
-  bool _arrivalDialogShown = false;
+  final FpsCounter _fpsCounter = FpsCounter();
+
+  bool _destinationNavigated = false;
   bool _isCameraReady = false;
+  bool _showDebug = kDebugMode;
 
   @override
   void initState() {
     super.initState();
+
     _pulseController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 1400),
     )..repeat(reverse: true);
+
+    _flashController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
 
     widget.controller.addListener(_onControllerUpdated);
     widget.arManager.initializeSession();
@@ -48,144 +65,99 @@ class _ArNavigationScreenState extends State<ArNavigationScreen> with SingleTick
   }
 
   Future<void> _initCamera() async {
-    if (_cameraService.isInitialized) {
-      setState(() {
-        _isCameraReady = true;
-      });
-    } else {
-      final success = await _cameraService.initializeCamera();
-      if (mounted) {
-        setState(() {
-          _isCameraReady = success;
-        });
-      }
-    }
+    final success = _cameraService.isInitialized
+        ? true
+        : await _cameraService.initializeCamera();
+    if (mounted) setState(() => _isCameraReady = success);
   }
 
   void _onControllerUpdated() {
-    // Synchronize ARManager with active target node
     widget.arManager.setTargetNode(widget.controller.nextTargetNode);
 
-    if (widget.controller.state == NavigationState.destinationReached && !_arrivalDialogShown) {
-      _arrivalDialogShown = true;
+    if (widget.controller.state == NavigationState.waypointReached) {
+      _flashController.forward(from: 0.0);
+    }
+
+    if (widget.controller.state == NavigationState.destinationReached &&
+        !_destinationNavigated) {
+      _destinationNavigated = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _showArrivalDialog();
-        }
+        if (mounted) _navigateToSuccess();
       });
     }
   }
 
-  void _showArrivalDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF161B2B),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: const BorderSide(color: Colors.greenAccent, width: 2),
+  void _navigateToSuccess() {
+    int steps = 0;
+    if (widget.controller.positionProvider is NativeArPositionProvider) {
+      steps = (widget.controller.positionProvider as NativeArPositionProvider)
+          .totalSteps;
+    }
+    Navigator.pushReplacement(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (ctx, anim, secondAnim) => SuccessScreen(
+          destination: widget.targetNode,
+          totalWaypoints: widget.controller.path.length,
+          totalDistance: _totalPathDist(),
+          totalSteps: steps,
         ),
-        title: Row(
-          children: const [
-            Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 36),
-            SizedBox(width: 12),
-            Text('Destination Reached!', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'You have successfully arrived at ${widget.targetNode.name}!',
-              style: const TextStyle(color: Colors.white70, fontSize: 16),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.greenAccent.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.route, color: Colors.greenAccent),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Total steps: ${widget.controller.path.length}',
-                    style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.greenAccent,
-              foregroundColor: Colors.black,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            onPressed: () {
-              Navigator.pop(context); // Close dialog
-              Navigator.pop(context); // Exit AR view
-            },
-            child: const Text('Finish Navigation', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-          ),
-        ],
+        transitionsBuilder: (ctx, anim, secondAnim, child) =>
+            FadeTransition(opacity: anim, child: child),
+        transitionDuration: const Duration(milliseconds: 700),
       ),
     );
+  }
+
+  double _totalPathDist() {
+    double d = 0;
+    for (int i = 0; i < widget.controller.path.length - 1; i++) {
+      d += widget.controller.path[i].distanceTo(widget.controller.path[i + 1]);
+    }
+    return d;
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_onControllerUpdated);
     _pulseController.dispose();
+    _flashController.dispose();
+    widget.controller.dispose();
+    widget.arManager.dispose();
+    widget.controller.positionProvider.dispose();
     super.dispose();
   }
 
-  String _getTurnInstruction(double relBearingRad, double distToNext, String? nextNodeName) {
-    if (distToNext <= 1.0) {
-      return 'Approaching $nextNodeName';
-    }
-    final deg = relBearingRad * (180.0 / pi);
-    if (deg.abs() < 20) {
-      return 'Go straight forward (${distToNext.toStringAsFixed(1)}m)';
-    } else if (deg < -20 && deg > -70) {
-      return 'Bear slight left towards $nextNodeName';
-    } else if (deg <= -70 && deg > -120) {
-      return 'Turn left towards $nextNodeName';
-    } else if (deg > 20 && deg < 70) {
-      return 'Bear slight right towards $nextNodeName';
-    } else if (deg >= 70 && deg < 120) {
-      return 'Turn right towards $nextNodeName';
-    } else {
-      return 'Turn around towards $nextNodeName';
-    }
+  // ─── Turn helpers ──────────────────────────────────────────────────────────
+
+  String _getTurnInstruction(double bearRad, double dist, String? name) {
+    if (dist <= 1.2) return '✓  Arriving at ${name ?? "waypoint"}';
+    final deg = bearRad * (180 / pi);
+    if (deg.abs() < 18) return 'Go straight  (${dist.toStringAsFixed(1)} m)';
+    if (deg < -18 && deg > -65) return 'Bear left toward ${name ?? "target"}';
+    if (deg <= -65 && deg > -125) return 'Turn left toward ${name ?? "target"}';
+    if (deg > 18 && deg < 65) return 'Bear right toward ${name ?? "target"}';
+    if (deg >= 65 && deg < 125) return 'Turn right toward ${name ?? "target"}';
+    return 'Turn around  —  ${name ?? "target"} is behind you';
   }
 
-  IconData _getTurnIcon(double relBearingRad) {
-    final deg = relBearingRad * (180.0 / pi);
-    if (deg.abs() < 20) {
-      return Icons.arrow_upward_rounded;
-    } else if (deg < -20 && deg > -70) {
-      return Icons.turn_slight_left_rounded;
-    } else if (deg <= -70 && deg > -120) {
-      return Icons.turn_left_rounded;
-    } else if (deg > 20 && deg < 70) {
-      return Icons.turn_slight_right_rounded;
-    } else if (deg >= 70 && deg < 120) {
-      return Icons.turn_right_rounded;
-    } else {
-      return Icons.u_turn_left_rounded;
-    }
+  IconData _getTurnIcon(double bearRad) {
+    final deg = bearRad * (180 / pi);
+    if (deg.abs() < 18) return Icons.arrow_upward_rounded;
+    if (deg < -18 && deg > -65) return Icons.turn_slight_left_rounded;
+    if (deg <= -65 && deg > -125) return Icons.turn_left_rounded;
+    if (deg > 18 && deg < 65) return Icons.turn_slight_right_rounded;
+    if (deg >= 65 && deg < 125) return Icons.turn_right_rounded;
+    return Icons.u_turn_left_rounded;
   }
+
+  // ─── Build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
+    _fpsCounter.onFrame();
+    final size = MediaQuery.of(context).size;
+
     return ListenableBuilder(
       listenable: Listenable.merge([widget.controller, widget.arManager]),
       builder: (context, _) {
@@ -195,26 +167,62 @@ class _ArNavigationScreenState extends State<ArNavigationScreen> with SingleTick
         final distNext = widget.controller.distanceToNextTarget;
         final distTotal = widget.controller.totalDistanceRemaining;
         final arrow = widget.arManager.arrow;
+        final userPose = widget.controller.latestPose;
+
+        int stepCount = 0;
+        if (widget.controller.positionProvider is NativeArPositionProvider) {
+          stepCount = (widget.controller.positionProvider
+                  as NativeArPositionProvider)
+              .totalSteps;
+        }
 
         final isTrackingGood = trackingState == TrackingState.good;
         final isTrackingLost = trackingState == TrackingState.lost;
-        final isFacingTarget = arrow.relativeBearingRadians.abs() < (20 * pi / 180.0);
-        final turnInstruction = _getTurnInstruction(arrow.relativeBearingRadians, distNext, nextNode?.name);
-        final turnIcon = _getTurnIcon(arrow.relativeBearingRadians);
+        final bearRad = arrow.relativeBearingRadians;
+        final isFacingTarget = bearRad.abs() < (20 * pi / 180);
+        final isTurningAround = bearRad.abs() > (130 * pi / 180);
+        final arrowColor = isFacingTarget
+            ? Colors.greenAccent
+            : isTurningAround
+                ? Colors.amberAccent
+                : arrow.color;
+
+        final totalNodes = widget.controller.path.length;
+        final progress = totalNodes < 2
+            ? 1.0
+            : (widget.controller.currentStepIndex + 1) / totalNodes;
+
+        final turnInstruction =
+            _getTurnInstruction(bearRad, distNext, nextNode?.name);
+        final turnIcon = _getTurnIcon(bearRad);
+
+        // ── Floating sign screen position ──────────────────────────────────
+        // The sign slides LEFT/RIGHT based on bearing — looks like it's
+        // physically placed in the corridor ahead of the user.
+        final signHorizOffset = sin(bearRad) * size.width * 0.32;
+        final signX = (size.width / 2 + signHorizOffset - 55)
+            .clamp(8.0, size.width - 118.0);
+        const signY = 0.27; // 27% from top — corridor sign height
 
         return Scaffold(
           backgroundColor: Colors.black,
           body: Stack(
             fit: StackFit.expand,
             children: [
-              // 1. Live Camera Stream Background
-              if (_isCameraReady && _cameraService.controller != null && _cameraService.controller!.value.isInitialized)
+              // ── 1. Live Camera ───────────────────────────────────────────
+              if (_isCameraReady &&
+                  _cameraService.controller != null &&
+                  _cameraService.controller!.value.isInitialized)
                 SizedBox.expand(
                   child: FittedBox(
                     fit: BoxFit.cover,
                     child: SizedBox(
-                      width: _cameraService.controller!.value.previewSize?.height ?? MediaQuery.of(context).size.width,
-                      height: _cameraService.controller!.value.previewSize?.width ?? MediaQuery.of(context).size.height,
+                      width: _cameraService.controller!.value.previewSize
+                              ?.height ??
+                          size.width,
+                      height: _cameraService.controller!.value.previewSize
+                              ?.width ??
+                          size.height,
                       child: CameraPreview(_cameraService.controller!),
                     ),
                   ),
@@ -228,92 +236,146 @@ class _ArNavigationScreenState extends State<ArNavigationScreen> with SingleTick
                       end: Alignment.bottomCenter,
                     ),
                   ),
-                  child: const Center(
-                    child: CircularProgressIndicator(color: Colors.cyanAccent),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const CircularProgressIndicator(color: Colors.cyanAccent),
+                        const SizedBox(height: 14),
+                        const Text('Initializing camera…',
+                            style: TextStyle(color: Colors.white54)),
+                        if (!_isCameraReady) ...[
+                          const SizedBox(height: 12),
+                          TextButton.icon(
+                            icon: const Icon(Icons.refresh,
+                                color: Colors.cyanAccent),
+                            label: const Text('Retry',
+                                style: TextStyle(color: Colors.cyanAccent)),
+                            onPressed: _initCamera,
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
 
-              // 2. HUD Gradient Shading
+              // ── 2. Vignette gradient ──────────────────────────────────────
               Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
-                      Colors.black.withValues(alpha: 0.75),
+                      Colors.black.withValues(alpha: 0.72),
                       Colors.transparent,
                       Colors.transparent,
-                      Colors.black.withValues(alpha: 0.85),
+                      Colors.black.withValues(alpha: 0.88),
                     ],
-                    stops: const [0.0, 0.22, 0.65, 1.0],
+                    stops: const [0.0, 0.20, 0.60, 1.0],
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                   ),
                 ),
               ),
 
-              // 3. Central 3D AR Navigation Arrow Visualizer
-              Center(
+              // ── 3. AR FLOOR PATH (CustomPaint) ────────────────────────────
+              // This draws the perspective path, chevron, and progress dots
+              // that look like they are painted ON THE FLOOR.
+              CustomPaint(
+                size: Size.infinite,
+                painter: ARPathPainter(
+                  relativeBearing: bearRad,
+                  distanceToNext: distNext,
+                  isFacingTarget: isFacingTarget,
+                  isTurningAround: isTurningAround,
+                  primaryColor: arrowColor,
+                ),
+              ),
+
+              // ── 4. Waypoint-reached green flash ───────────────────────────
+              AnimatedBuilder(
+                animation: _flashController,
+                builder: (ctx, child) {
+                  final t = _flashController.value;
+                  final opacity = t < 0.3
+                      ? t / 0.3
+                      : t < 0.7
+                          ? 1.0
+                          : (1.0 - t) / 0.3;
+                  if (t == 0) return const SizedBox.shrink();
+                  return Container(
+                    color: Colors.greenAccent.withValues(alpha: opacity * 0.18),
+                  );
+                },
+              ),
+
+              // ── 5. FLOATING CORRIDOR SIGN (bearing-offset arrow) ──────────
+              // This is the key AR trick: the sign slides LEFT/RIGHT on screen
+              // based on which direction you need to turn, making it appear
+              // as though it's positioned IN the corridor ahead of you.
+              Positioned(
+                left: signX,
+                top: size.height * signY,
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Dynamic rotating 3D directional arrow
-                    Transform.rotate(
-                      angle: arrow.relativeBearingRadians,
-                      child: ScaleTransition(
-                        scale: Tween(begin: 0.95, end: 1.08).animate(_pulseController),
-                        child: Container(
-                          width: 150,
-                          height: 150,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: isFacingTarget
-                                ? Colors.greenAccent.withValues(alpha: 0.25)
-                                : arrow.color.withValues(alpha: 0.2),
-                            border: Border.all(
-                              color: isFacingTarget ? Colors.greenAccent : arrow.color,
-                              width: 3.5,
+                    // Glassmorphic sign card
+                    ScaleTransition(
+                      scale: Tween(begin: 0.97, end: 1.04)
+                          .animate(_pulseController),
+                      child: Container(
+                        width: 110,
+                        height: 110,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(22),
+                          color: arrowColor.withValues(alpha: 0.16),
+                          border: Border.all(
+                            color: arrowColor.withValues(alpha: 0.8),
+                            width: 2,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: arrowColor.withValues(alpha: 0.40),
+                              blurRadius: 30,
+                              spreadRadius: 2,
                             ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: (isFacingTarget ? Colors.greenAccent : arrow.color).withValues(alpha: 0.4),
-                                blurRadius: 25,
-                                spreadRadius: 3,
-                              ),
-                            ],
-                          ),
-                          child: Icon(
-                            Icons.navigation_rounded,
-                            size: 96,
-                            color: isFacingTarget ? Colors.greenAccent : arrow.color,
-                          ),
+                          ],
+                        ),
+                        child: Icon(
+                          turnIcon,
+                          size: 60,
+                          color: arrowColor,
                         ),
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    // Distance badge directly under AR arrow
+
+                    const SizedBox(height: 7),
+
+                    // Distance badge below sign
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 5),
                       decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.75),
-                        borderRadius: BorderRadius.circular(20),
+                        color: Colors.black.withValues(alpha: 0.78),
+                        borderRadius: BorderRadius.circular(16),
                         border: Border.all(
-                          color: isFacingTarget ? Colors.greenAccent : Colors.cyanAccent.withValues(alpha: 0.5),
+                          color: arrowColor.withValues(alpha: 0.6),
                         ),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
-                            isFacingTarget ? Icons.check_circle : Icons.straighten,
-                            color: isFacingTarget ? Colors.greenAccent : Colors.cyanAccent,
-                            size: 16,
+                            isFacingTarget
+                                ? Icons.check_circle_outline
+                                : Icons.straighten,
+                            color: arrowColor,
+                            size: 14,
                           ),
-                          const SizedBox(width: 6),
+                          const SizedBox(width: 5),
                           Text(
-                            '${distNext.toStringAsFixed(1)} m to ${nextNode?.name ?? "Target"}',
+                            '${distNext.toStringAsFixed(1)} m',
                             style: TextStyle(
-                              color: isFacingTarget ? Colors.greenAccent : Colors.white,
+                              color: arrowColor,
                               fontWeight: FontWeight.bold,
-                              fontSize: 14,
+                              fontSize: 13,
                             ),
                           ),
                         ],
@@ -323,16 +385,18 @@ class _ArNavigationScreenState extends State<ArNavigationScreen> with SingleTick
                 ),
               ),
 
-              // 4. Top Status Header & Waypoint Progress Bar
+              // ── 6. Top Header Bar ─────────────────────────────────────────
               SafeArea(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12.0, vertical: 6.0),
                   child: Column(
                     children: [
                       Row(
                         children: [
                           IconButton(
-                            icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
+                            icon: const Icon(Icons.arrow_back_ios_new,
+                                color: Colors.white),
                             onPressed: () => Navigator.pop(context),
                           ),
                           Expanded(
@@ -340,79 +404,60 @@ class _ArNavigationScreenState extends State<ArNavigationScreen> with SingleTick
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Navigating to ${widget.targetNode.name}',
+                                  'To: ${widget.targetNode.name}',
                                   style: const TextStyle(
                                     color: Colors.white,
-                                    fontSize: 17,
+                                    fontSize: 16,
                                     fontWeight: FontWeight.bold,
                                   ),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                                 Text(
-                                  'Step ${widget.controller.currentStepIndex + 1} of ${widget.controller.path.length} • Total: ${distTotal.toStringAsFixed(1)}m remaining',
-                                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                                  'Step ${widget.controller.currentStepIndex + 1}/$totalNodes  •  ${distTotal.toStringAsFixed(1)} m left',
+                                  style: const TextStyle(
+                                      color: Colors.white60, fontSize: 11),
                                 ),
                               ],
                             ),
                           ),
-                          // Tracking Badge
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: isTrackingGood
-                                  ? Colors.green.withValues(alpha: 0.25)
-                                  : isTrackingLost
-                                      ? Colors.red.withValues(alpha: 0.25)
-                                      : Colors.amber.withValues(alpha: 0.25),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: isTrackingGood
-                                    ? Colors.greenAccent
-                                    : isTrackingLost
-                                        ? Colors.redAccent
-                                        : Colors.amberAccent,
+                          _TrackingBadge(
+                              isGood: isTrackingGood, isLost: isTrackingLost),
+                          const SizedBox(width: 4),
+                          GestureDetector(
+                            onTap: () =>
+                                setState(() => _showDebug = !_showDebug),
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: _showDebug
+                                    ? Colors.amberAccent.withValues(alpha: 0.2)
+                                    : Colors.white.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                    color: _showDebug
+                                        ? Colors.amberAccent
+                                        : Colors.white24),
                               ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  isTrackingGood ? Icons.circle : Icons.warning_amber_rounded,
-                                  color: isTrackingGood
-                                      ? Colors.greenAccent
-                                      : isTrackingLost
-                                          ? Colors.redAccent
-                                          : Colors.amberAccent,
-                                  size: 10,
-                                ),
-                                const SizedBox(width: 5),
-                                Text(
-                                  isTrackingGood ? 'LIVE' : isTrackingLost ? 'LOST' : 'LIMITED',
-                                  style: TextStyle(
-                                    color: isTrackingGood
-                                        ? Colors.greenAccent
-                                        : isTrackingLost
-                                            ? Colors.redAccent
-                                            : Colors.amberAccent,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 10,
-                                  ),
-                                ),
-                              ],
+                              child: Icon(
+                                Icons.bug_report_rounded,
+                                size: 16,
+                                color: _showDebug
+                                    ? Colors.amberAccent
+                                    : Colors.white38,
+                              ),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 8),
-                      // Progress Bar
+                      const SizedBox(height: 5),
+                      // Progress bar
                       ClipRRect(
                         borderRadius: BorderRadius.circular(4),
                         child: LinearProgressIndicator(
-                          value: widget.controller.path.isEmpty
-                              ? 1.0
-                              : (widget.controller.currentStepIndex + 1) / widget.controller.path.length,
-                          backgroundColor: Colors.white12,
-                          valueColor: const AlwaysStoppedAnimation<Color>(Colors.cyanAccent),
+                          value: progress,
+                          backgroundColor: Colors.white10,
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(arrowColor),
                           minHeight: 4,
                         ),
                       ),
@@ -421,118 +466,143 @@ class _ArNavigationScreenState extends State<ArNavigationScreen> with SingleTick
                 ),
               ),
 
-              // 5. Bottom Turn-by-Turn Card & Navigation Action Buttons
+              // ── 7. Bottom Turn Card ───────────────────────────────────────
               Positioned(
                 bottom: 0,
                 left: 0,
                 right: 0,
                 child: SafeArea(
                   child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Turn Guidance HUD Card
-                        Card(
-                          color: const Color(0xFF161B2B).withValues(alpha: 0.92),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            side: BorderSide(
-                              color: isFacingTarget ? Colors.greenAccent.withValues(alpha: 0.5) : Colors.cyanAccent.withValues(alpha: 0.3),
-                              width: 1.5,
+                    padding: const EdgeInsets.all(14.0),
+                    child: Card(
+                      color: const Color(0xFF161B2B).withValues(alpha: 0.93),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        side: BorderSide(
+                          color: arrowColor.withValues(alpha: 0.45),
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 14),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: arrowColor.withValues(alpha: 0.15),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(turnIcon,
+                                  color: arrowColor, size: 28),
                             ),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: Row(
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    turnInstruction,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    '${currentNode?.name ?? "Start"} → ${nextNode?.name ?? "Destination"}',
+                                    style: const TextStyle(
+                                        color: Colors.white54, fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            // Live coordinate mini-pill
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
-                                Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: (isFacingTarget ? Colors.greenAccent : Colors.cyanAccent).withValues(alpha: 0.15),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(
-                                    turnIcon,
-                                    color: isFacingTarget ? Colors.greenAccent : Colors.cyanAccent,
-                                    size: 28,
-                                  ),
+                                Text(
+                                  '${(userPose.yawDegrees + 360) % 360 ~/ 1}°',
+                                  style: const TextStyle(
+                                      color: Colors.white38,
+                                      fontSize: 10,
+                                      fontFamily: 'monospace'),
                                 ),
-                                const SizedBox(width: 14),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        turnInstruction,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 16,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        'From ${currentNode?.name ?? "Start"} ➔ ${nextNode?.name ?? "Destination"}',
-                                        style: const TextStyle(color: Colors.white60, fontSize: 12),
-                                      ),
-                                    ],
-                                  ),
+                                Text(
+                                  '$stepCount steps',
+                                  style: const TextStyle(
+                                      color: Colors.white30,
+                                      fontSize: 10,
+                                      fontFamily: 'monospace'),
                                 ),
                               ],
                             ),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        // Quick Action Buttons (Step Forward / Next Waypoint)
-                        Row(
-                          children: [
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                icon: const Icon(Icons.directions_walk, size: 18),
-                                label: const Text('+ Step Forward (0.8m)'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF232A42),
-                                  foregroundColor: Colors.cyanAccent,
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    side: const BorderSide(color: Colors.cyanAccent, width: 1),
-                                  ),
-                                ),
-                                onPressed: () {
-                                  widget.controller.simulateStep(stepMeters: 0.8);
-                                },
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            ElevatedButton.icon(
-                              icon: const Icon(Icons.skip_next, size: 18),
-                              label: const Text('Next Node'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF232A42),
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  side: const BorderSide(color: Colors.white24, width: 1),
-                                ),
-                              ),
-                              onPressed: () {
-                                widget.controller.advanceToNextWaypoint();
-                              },
-                            ),
                           ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
               ),
+
+              // ── 8. Debug Overlay ──────────────────────────────────────────
+              if (_showDebug)
+                DebugOverlay(
+                  trackingState: trackingState,
+                  currentNode: currentNode,
+                  nextNode: nextNode,
+                  distanceToNext: distNext,
+                  userPose: userPose,
+                  fpsCounter: _fpsCounter,
+                ),
             ],
           ),
         );
       },
+    );
+  }
+}
+
+// ─── Tracking Badge ────────────────────────────────────────────────────────────
+
+class _TrackingBadge extends StatelessWidget {
+  final bool isGood;
+  final bool isLost;
+  const _TrackingBadge({required this.isGood, required this.isLost});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isGood
+        ? Colors.greenAccent
+        : isLost
+            ? Colors.redAccent
+            : Colors.amberAccent;
+    final label = isGood ? 'LIVE' : isLost ? 'LOST' : 'LIMITED';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isGood ? Icons.circle : Icons.warning_amber_rounded,
+            color: color,
+            size: 8,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+                color: color, fontWeight: FontWeight.bold, fontSize: 10),
+          ),
+        ],
+      ),
     );
   }
 }
