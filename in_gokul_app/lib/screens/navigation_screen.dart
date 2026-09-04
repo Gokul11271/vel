@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/node.dart';
 import '../algorithms/dijkstra.dart';
+import '../theme/app_theme.dart';
 import 'calibration_screen.dart';
 
 class NavigationScreen extends StatelessWidget {
@@ -21,7 +22,7 @@ class NavigationScreen extends StatelessWidget {
     final bool hasPath = path.isNotEmpty;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0D17),
+      backgroundColor: AppColors.creamBg,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -33,14 +34,14 @@ class NavigationScreen extends StatelessWidget {
                 children: [
                   IconButton(
                     icon: const Icon(Icons.arrow_back_ios_new,
-                        color: Colors.white),
+                        color: AppColors.textDark),
                     onPressed: () => Navigator.pop(context),
                   ),
                   const Expanded(
                     child: Text(
                       'Route Preview',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: AppColors.textDark,
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
                       ),
@@ -54,19 +55,24 @@ class NavigationScreen extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: Container(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  gradient: LinearGradient(
+                  borderRadius: BorderRadius.circular(18),
+                  gradient: const LinearGradient(
                     colors: [
-                      Colors.deepPurpleAccent.withValues(alpha: 0.25),
-                      Colors.cyanAccent.withValues(alpha: 0.06),
+                      AppColors.primaryBlue,
+                      AppColors.accentBlue,
                     ],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
-                  border: Border.all(
-                      color: Colors.deepPurpleAccent.withValues(alpha: 0.4)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primaryBlue.withValues(alpha: 0.25),
+                      blurRadius: 16,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
                 child: Row(
                   children: [
@@ -76,30 +82,28 @@ class NavigationScreen extends StatelessWidget {
                         children: [
                           Row(
                             children: [
-                              const Icon(Icons.circle,
-                                  color: Colors.greenAccent, size: 10),
-                              const SizedBox(width: 6),
+                              const Icon(Icons.radio_button_checked_rounded,
+                                  color: Colors.white70, size: 14),
+                              const SizedBox(width: 8),
                               Text(startNode.name,
                                   style: const TextStyle(
                                       color: Colors.white70, fontSize: 13)),
                             ],
                           ),
-                          const SizedBox(height: 4),
                           const Padding(
-                            padding: EdgeInsets.only(left: 4),
+                            padding: EdgeInsets.only(left: 6, top: 2, bottom: 2),
                             child: Icon(Icons.more_vert,
-                                color: Colors.white12, size: 14),
+                                color: Colors.white30, size: 12),
                           ),
-                          const SizedBox(height: 2),
                           Row(
                             children: [
                               const Icon(Icons.flag_rounded,
-                                  color: Colors.cyanAccent, size: 12),
-                              const SizedBox(width: 6),
+                                  color: Colors.white, size: 16),
+                              const SizedBox(width: 8),
                               Text(targetNode.name,
                                   style: const TextStyle(
                                       color: Colors.white,
-                                      fontSize: 15,
+                                      fontSize: 16,
                                       fontWeight: FontWeight.bold)),
                             ],
                           ),
@@ -113,14 +117,13 @@ class NavigationScreen extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
-                            color:
-                                Colors.cyanAccent.withValues(alpha: 0.12),
+                            color: Colors.white.withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: Text(
                             '${path.length} stops',
                             style: const TextStyle(
-                                color: Colors.cyanAccent,
+                                color: Colors.white,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 12),
                           ),
@@ -131,7 +134,7 @@ class NavigationScreen extends StatelessWidget {
                               ? '${routeResult.totalDistance.toStringAsFixed(1)} m'
                               : 'No path',
                           style: const TextStyle(
-                              color: Colors.white54, fontSize: 13),
+                              color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500),
                         ),
                       ],
                     ),
@@ -145,9 +148,9 @@ class NavigationScreen extends StatelessWidget {
               child: Text(
                 'ROUTE STEPS',
                 style: TextStyle(
-                  color: Colors.white38,
+                  color: AppColors.textSubtle,
                   fontSize: 11,
-                  letterSpacing: 2,
+                  letterSpacing: 1.2,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -161,11 +164,11 @@ class NavigationScreen extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: const [
                           Icon(Icons.route_rounded,
-                              size: 56, color: Colors.white12),
+                              size: 56, color: AppColors.textSubtle),
                           SizedBox(height: 12),
                           Text('No path found',
                               style: TextStyle(
-                                  color: Colors.white38, fontSize: 15)),
+                                  color: AppColors.textMuted, fontSize: 15)),
                         ],
                       ),
                     )
@@ -196,18 +199,16 @@ class NavigationScreen extends StatelessWidget {
                                     decoration: BoxDecoration(
                                       shape: BoxShape.circle,
                                       color: isFirst
-                                          ? Colors.greenAccent
+                                          ? AppColors.primaryBlue
                                           : isLast
-                                              ? Colors.cyanAccent
-                                              : Colors.deepPurpleAccent
-                                                  .withValues(alpha: 0.5),
-                                      border: isFirst || isLast
-                                          ? Border.all(
-                                              color: isFirst
-                                                  ? Colors.greenAccent
-                                                  : Colors.cyanAccent,
-                                              width: 2)
-                                          : null,
+                                              ? AppColors.accentBlue
+                                              : AppColors.softBlue,
+                                      border: Border.all(
+                                        color: isFirst || isLast
+                                            ? AppColors.primaryBlue
+                                            : AppColors.softBlueBorder,
+                                        width: 2,
+                                      ),
                                     ),
                                     child: Icon(
                                       isFirst
@@ -216,8 +217,8 @@ class NavigationScreen extends StatelessWidget {
                                               ? Icons.flag_rounded
                                               : Icons.circle,
                                       color: isFirst || isLast
-                                          ? Colors.black
-                                          : Colors.white70,
+                                          ? Colors.white
+                                          : AppColors.primaryBlue,
                                       size: 13,
                                     ),
                                   ),
@@ -227,16 +228,7 @@ class NavigationScreen extends StatelessWidget {
                                       height: 50,
                                       margin: const EdgeInsets.symmetric(
                                           vertical: 2),
-                                      decoration: BoxDecoration(
-                                        gradient: LinearGradient(
-                                          colors: [
-                                            Colors.white12,
-                                            Colors.white.withValues(alpha: 0.04),
-                                          ],
-                                          begin: Alignment.topCenter,
-                                          end: Alignment.bottomCenter,
-                                        ),
-                                      ),
+                                      color: AppColors.creamBorder,
                                     ),
                                 ],
                               ),
@@ -246,21 +238,24 @@ class NavigationScreen extends StatelessWidget {
                             Expanded(
                               child: Container(
                                 margin: const EdgeInsets.only(bottom: 8),
-                                padding: const EdgeInsets.all(12),
+                                padding: const EdgeInsets.all(14),
                                 decoration: BoxDecoration(
                                   color: (isFirst || isLast)
-                                      ? Colors.white.withValues(alpha: 0.06)
-                                      : Colors.white.withValues(alpha: 0.03),
-                                  borderRadius: BorderRadius.circular(12),
+                                      ? AppColors.softBlue
+                                      : AppColors.creamSurface,
+                                  borderRadius: BorderRadius.circular(14),
                                   border: Border.all(
-                                    color: isFirst
-                                        ? Colors.greenAccent
-                                            .withValues(alpha: 0.25)
-                                        : isLast
-                                            ? Colors.cyanAccent
-                                                .withValues(alpha: 0.25)
-                                            : Colors.white.withValues(alpha: 0.06),
+                                    color: (isFirst || isLast)
+                                        ? AppColors.softBlueBorder
+                                        : AppColors.creamBorder,
                                   ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.02),
+                                      blurRadius: 4,
+                                      offset: const Offset(0, 1),
+                                    ),
+                                  ],
                                 ),
                                 child: Row(
                                   children: [
@@ -272,11 +267,9 @@ class NavigationScreen extends StatelessWidget {
                                           Text(
                                             'Step ${index + 1}: ${node.name}',
                                             style: TextStyle(
-                                              color: isFirst
-                                                  ? Colors.greenAccent
-                                                  : isLast
-                                                      ? Colors.cyanAccent
-                                                      : Colors.white,
+                                              color: (isFirst || isLast)
+                                                  ? AppColors.primaryBlue
+                                                  : AppColors.textDark,
                                               fontWeight: FontWeight.bold,
                                               fontSize: 14,
                                             ),
@@ -285,7 +278,7 @@ class NavigationScreen extends StatelessWidget {
                                           Text(
                                             '(${node.x.toStringAsFixed(1)}, ${node.y.toStringAsFixed(1)}, ${node.z.toStringAsFixed(1)})',
                                             style: const TextStyle(
-                                                color: Colors.white30,
+                                                color: AppColors.textSubtle,
                                                 fontSize: 11),
                                           ),
                                         ],
@@ -296,15 +289,16 @@ class NavigationScreen extends StatelessWidget {
                                         padding: const EdgeInsets.symmetric(
                                             horizontal: 8, vertical: 3),
                                         decoration: BoxDecoration(
-                                          color: Colors.white.withValues(alpha: 0.05),
+                                          color: AppColors.creamSurfaceAlt,
                                           borderRadius:
                                               BorderRadius.circular(10),
                                         ),
                                         child: Text(
                                           '${legDist.toStringAsFixed(1)} m',
                                           style: const TextStyle(
-                                              color: Colors.white38,
-                                              fontSize: 11),
+                                              color: AppColors.textMuted,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600),
                                         ),
                                       ),
                                   ],
@@ -319,7 +313,7 @@ class NavigationScreen extends StatelessWidget {
 
             // ── Start AR button ────────────────────────────────────────────
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
               child: ElevatedButton.icon(
                 icon: const Icon(Icons.explore_rounded, size: 20),
                 label: const Text(
@@ -329,12 +323,13 @@ class NavigationScreen extends StatelessWidget {
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor:
-                      hasPath ? Colors.cyanAccent : Colors.white12,
-                  foregroundColor: hasPath ? Colors.black : Colors.white38,
+                      hasPath ? AppColors.primaryBlue : AppColors.creamSurfaceAlt,
+                  foregroundColor: hasPath ? Colors.white : AppColors.textSubtle,
                   minimumSize: const Size(double.infinity, 54),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14)),
-                  elevation: 0,
+                  elevation: hasPath ? 2 : 0,
+                  shadowColor: AppColors.primaryBlue.withValues(alpha: 0.35),
                 ),
                 onPressed: !hasPath
                     ? null

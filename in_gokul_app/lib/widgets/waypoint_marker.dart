@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 
 /// Animated waypoint proximity & arrival marker.
 ///
 /// Shows when [distanceToNode] ≤ [showWithinMeters] (default 8 m).
 /// States:
-///   - Approaching: "📍 Node Name  2.3 m"  — pulsing amber pill
-///   - Reached: cross-fades to "✓ Node Reached"  — green flash → fades out after 1.5 s
+///   - Approaching: "📍 Node Name  2.3 m"  — pulsing blue & cream pill
+///   - Reached: cross-fades to "✓ Node Reached"  — blue/cyan flash → fades out after 1.5 s
 class WaypointMarker extends StatefulWidget {
   final String nodeName;
   final double distanceToNode;
@@ -115,47 +116,49 @@ class _WaypointMarkerState extends State<WaypointMarker>
   Widget _buildApproachChip() {
     return ScaleTransition(
       scale: _pulseAnim,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.80),
-          borderRadius: BorderRadius.circular(28),
-          border: Border.all(
-            color: Colors.amberAccent.withValues(alpha: 0.85),
-            width: 1.5,
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+          decoration: BoxDecoration(
+            color: AppColors.navyDark.withValues(alpha: 0.88),
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(
+              color: AppColors.lightBlue.withValues(alpha: 0.85),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primaryBlue.withValues(alpha: 0.35),
+                blurRadius: 16,
+                spreadRadius: 2,
+              ),
+            ],
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.amberAccent.withValues(alpha: 0.25),
-              blurRadius: 14,
-              spreadRadius: 1,
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.location_on_rounded,
-                color: Colors.amberAccent, size: 18),
-            const SizedBox(width: 8),
-            Text(
-              widget.nodeName,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.location_on_rounded,
+                  color: AppColors.lightBlue, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                widget.nodeName,
+                style: const TextStyle(
+                  color: AppColors.textLight,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
               ),
-            ),
-            const SizedBox(width: 10),
-            Text(
-              '${widget.distanceToNode.toStringAsFixed(1)} m',
-              style: const TextStyle(
-                color: Colors.amberAccent,
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
+              const SizedBox(width: 10),
+              Text(
+                '${widget.distanceToNode.toStringAsFixed(1)} m',
+                style: const TextStyle(
+                  color: AppColors.lightBlue,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -164,35 +167,37 @@ class _WaypointMarkerState extends State<WaypointMarker>
   Widget _buildReachedChip() {
     return FadeTransition(
       opacity: _reachedFade,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-        decoration: BoxDecoration(
-          color: Colors.greenAccent.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(28),
-          border: Border.all(color: Colors.greenAccent, width: 1.5),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.greenAccent.withValues(alpha: 0.35),
-              blurRadius: 18,
-              spreadRadius: 2,
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.check_circle_rounded,
-                color: Colors.greenAccent, size: 20),
-            const SizedBox(width: 8),
-            Text(
-              '${widget.nodeName}  Reached',
-              style: const TextStyle(
-                color: Colors.greenAccent,
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          decoration: BoxDecoration(
+            color: AppColors.primaryBlue.withValues(alpha: 0.88),
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: AppColors.lightBlue, width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.lightBlue.withValues(alpha: 0.4),
+                blurRadius: 20,
+                spreadRadius: 3,
               ),
-            ),
-          ],
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.check_circle_rounded,
+                  color: Colors.white, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                '${widget.nodeName} Reached',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/graph_service.dart';
 import '../models/node.dart';
+import '../theme/app_theme.dart';
 import 'navigation_screen.dart';
 
 class DestinationScreen extends StatelessWidget {
@@ -21,7 +22,7 @@ class DestinationScreen extends StatelessWidget {
         .toList();
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0D17),
+      backgroundColor: AppColors.creamBg,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -33,14 +34,14 @@ class DestinationScreen extends StatelessWidget {
                 children: [
                   IconButton(
                     icon: const Icon(Icons.arrow_back_ios_new,
-                        color: Colors.white),
+                        color: AppColors.textDark),
                     onPressed: () => Navigator.pop(context),
                   ),
                   const Expanded(
                     child: Text(
                       'Choose Destination',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: AppColors.textDark,
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
                       ),
@@ -58,20 +59,20 @@ class DestinationScreen extends StatelessWidget {
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
-                  color: Colors.cyanAccent.withValues(alpha: 0.08),
+                  color: AppColors.softBlue,
                   border:
-                      Border.all(color: Colors.cyanAccent.withValues(alpha: 0.4)),
+                      Border.all(color: AppColors.softBlueBorder),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const Icon(Icons.my_location,
-                        color: Colors.cyanAccent, size: 16),
+                        color: AppColors.primaryBlue, size: 16),
                     const SizedBox(width: 8),
                     Text(
                       'From: ${startNode.name}  (#${startNode.id})',
                       style: const TextStyle(
-                        color: Colors.cyanAccent,
+                        color: AppColors.primaryBlue,
                         fontWeight: FontWeight.w600,
                         fontSize: 13,
                       ),
@@ -86,9 +87,9 @@ class DestinationScreen extends StatelessWidget {
               child: Text(
                 'WHERE DO YOU WANT TO GO?',
                 style: TextStyle(
-                  color: Colors.white38,
+                  color: AppColors.textSubtle,
                   fontSize: 11,
-                  letterSpacing: 2,
+                  letterSpacing: 1.2,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -165,13 +166,21 @@ class _DestinationTileState extends State<_DestinationTile> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
           color: _pressed
-              ? Colors.cyanAccent.withValues(alpha: 0.1)
-              : Colors.white.withValues(alpha: 0.04),
+              ? AppColors.softBlue
+              : AppColors.creamSurface,
           border: Border.all(
             color: _pressed
-                ? Colors.cyanAccent.withValues(alpha: 0.5)
-                : Colors.white.withValues(alpha: 0.07),
+                ? AppColors.primaryBlue
+                : AppColors.creamBorder,
+            width: _pressed ? 1.5 : 1,
           ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.02),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Row(
           children: [
@@ -181,15 +190,15 @@ class _DestinationTileState extends State<_DestinationTile> {
               height: 44,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.deepPurpleAccent.withValues(alpha: 0.2),
+                color: AppColors.softBlue,
                 border: Border.all(
-                    color: Colors.deepPurpleAccent.withValues(alpha: 0.6)),
+                    color: AppColors.softBlueBorder),
               ),
               child: Center(
                 child: Text(
                   '#${widget.node.id}',
                   style: const TextStyle(
-                    color: Colors.deepPurpleAccent,
+                    color: AppColors.primaryBlue,
                     fontWeight: FontWeight.bold,
                     fontSize: 13,
                   ),
@@ -204,7 +213,7 @@ class _DestinationTileState extends State<_DestinationTile> {
                   Text(
                     widget.node.name,
                     style: const TextStyle(
-                      color: Colors.white,
+                      color: AppColors.textDark,
                       fontWeight: FontWeight.bold,
                       fontSize: 15,
                     ),
@@ -212,13 +221,13 @@ class _DestinationTileState extends State<_DestinationTile> {
                   const SizedBox(height: 3),
                   Text(
                     '${widget.directDistance.toStringAsFixed(2)} m straight-line distance',
-                    style: const TextStyle(color: Colors.white38, fontSize: 12),
+                    style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
                   ),
                 ],
               ),
             ),
             const Icon(Icons.arrow_forward_ios_rounded,
-                size: 16, color: Colors.white30),
+                size: 16, color: AppColors.primaryBlue),
           ],
         ),
       ),

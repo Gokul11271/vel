@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/graph_service.dart';
 import '../models/node.dart';
+import '../theme/app_theme.dart';
 import 'destination_screen.dart';
 import 'qr_scan_screen.dart';
 import 'mapper_screen.dart';
@@ -62,21 +63,21 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0D17),
+      backgroundColor: AppColors.creamBg,
       body: Stack(
         children: [
-          // Background radial glow
+          // Background subtle ambient blue glow at top right
           Positioned(
-            top: -80,
+            top: -60,
             right: -60,
             child: Container(
-              width: 300,
-              height: 300,
+              width: 280,
+              height: 280,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: RadialGradient(
                   colors: [
-                    Colors.cyanAccent.withValues(alpha: 0.08),
+                    AppColors.lightBlue.withValues(alpha: 0.12),
                     Colors.transparent,
                   ],
                 ),
@@ -87,7 +88,7 @@ class _HomeScreenState extends State<HomeScreen>
           SafeArea(
             child: _isLoading
                 ? const Center(
-                    child: CircularProgressIndicator(color: Colors.cyanAccent),
+                    child: CircularProgressIndicator(color: AppColors.primaryBlue),
                   )
                 : _error != null
                     ? _buildError()
@@ -109,12 +110,12 @@ class _HomeScreenState extends State<HomeScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             const Icon(Icons.error_outline_rounded,
-                size: 56, color: Colors.redAccent),
+                size: 56, color: AppColors.error),
             const SizedBox(height: 16),
             const Text(
               'Failed to load map data',
               style: TextStyle(
-                  color: Colors.white,
+                  color: AppColors.textDark,
                   fontSize: 18,
                   fontWeight: FontWeight.bold),
             ),
@@ -122,15 +123,15 @@ class _HomeScreenState extends State<HomeScreen>
             Text(
               _error!,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white54, fontSize: 13),
+              style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
             ),
             const SizedBox(height: 24),
             ElevatedButton.icon(
               icon: const Icon(Icons.refresh),
               label: const Text('Retry'),
               style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.cyanAccent,
-                  foregroundColor: Colors.black),
+                  backgroundColor: AppColors.primaryBlue,
+                  foregroundColor: Colors.white),
               onPressed: () {
                 setState(() {
                   _isLoading = true;
@@ -151,36 +152,51 @@ class _HomeScreenState extends State<HomeScreen>
       children: [
         // ── Header ──────────────────────────────────────────────────────────
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 32, 24, 0),
+          padding: const EdgeInsets.fromLTRB(24, 28, 24, 0),
           child: Row(
             children: [
               Container(
-                width: 48,
-                height: 48,
+                width: 50,
+                height: 50,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.cyanAccent.withValues(alpha: 0.15),
-                  border:
-                      Border.all(color: Colors.cyanAccent.withValues(alpha: 0.6)),
+                  gradient: const LinearGradient(
+                    colors: [AppColors.primaryBlue, AppColors.accentBlue],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primaryBlue.withValues(alpha: 0.28),
+                      blurRadius: 14,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
                 child: const Icon(Icons.explore_rounded,
-                    color: Colors.cyanAccent, size: 26),
+                    color: Colors.white, size: 26),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 16),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
                     'Indoor Navigator',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: AppColors.textDark,
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
+                      letterSpacing: -0.3,
                     ),
                   ),
+                  const SizedBox(height: 2),
                   Text(
-                    '${_destinations.length} waypoints loaded',
-                    style: const TextStyle(color: Colors.white38, fontSize: 12),
+                    '${_destinations.length} waypoints available',
+                    style: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ],
               ),
@@ -188,7 +204,7 @@ class _HomeScreenState extends State<HomeScreen>
           ),
         ),
 
-        const SizedBox(height: 28),
+        const SizedBox(height: 24),
 
         // ── Primary Action Cards ─────────────────────────────────────────────
         Padding(
@@ -198,9 +214,11 @@ class _HomeScreenState extends State<HomeScreen>
               // Card 1: Scan QR & Navigate
               _ActionCard(
                 icon: Icons.qr_code_scanner_rounded,
-                color: Colors.cyanAccent,
-                title: '📷  Scan QR & Navigate',
-                subtitle: 'Scan the building entrance QR to start guided AR navigation',
+                cardBg: AppColors.creamSurface,
+                accentColor: AppColors.primaryBlue,
+                iconBg: AppColors.softBlue,
+                title: 'Scan QR & Navigate',
+                subtitle: 'Scan the entrance QR code to start AR floor navigation',
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => const QrScanScreen()),
@@ -210,9 +228,11 @@ class _HomeScreenState extends State<HomeScreen>
               // Card 2: Map a New Building
               _ActionCard(
                 icon: Icons.map_rounded,
-                color: const Color(0xFFFF9E2C),
-                title: '🗺️  Map a New Building',
-                subtitle: 'Walk a path tapping nodes to create and save a building map',
+                cardBg: AppColors.creamSurface,
+                accentColor: AppColors.accentBlue,
+                iconBg: const Color(0xFFEFF6FF),
+                title: 'Map a New Building',
+                subtitle: 'Walk a corridor dropping nodes to map and save the layout',
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => const MapperScreen()),
@@ -222,27 +242,27 @@ class _HomeScreenState extends State<HomeScreen>
           ),
         ),
 
-        const SizedBox(height: 28),
+        const SizedBox(height: 24),
 
         // ── Section divider ──────────────────────────────────────────────────
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 24),
           child: Row(
             children: [
-              Expanded(child: Divider(color: Colors.white12)),
+              Expanded(child: Divider(color: AppColors.creamBorder, thickness: 1)),
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: 12),
                 child: Text(
                   'OR PICK A START POINT',
                   style: TextStyle(
-                    color: Colors.white24,
-                    fontSize: 10,
+                    color: AppColors.textSubtle,
+                    fontSize: 11,
                     fontWeight: FontWeight.bold,
-                    letterSpacing: 1.5,
+                    letterSpacing: 1.2,
                   ),
                 ),
               ),
-              Expanded(child: Divider(color: Colors.white12)),
+              Expanded(child: Divider(color: AppColors.creamBorder, thickness: 1)),
             ],
           ),
         ),
@@ -267,39 +287,54 @@ class _HomeScreenState extends State<HomeScreen>
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(14),
                     color: isSelected
-                        ? Colors.cyanAccent.withValues(alpha: 0.12)
-                        : Colors.white.withValues(alpha: 0.04),
+                        ? AppColors.softBlue
+                        : AppColors.creamSurface,
                     border: Border.all(
                       color: isSelected
-                          ? Colors.cyanAccent
-                          : Colors.white.withValues(alpha: 0.08),
-                      width: isSelected ? 1.5 : 1,
+                          ? AppColors.primaryBlue
+                          : AppColors.creamBorder,
+                      width: isSelected ? 1.8 : 1,
                     ),
+                    boxShadow: isSelected
+                        ? [
+                            BoxShadow(
+                              color: AppColors.primaryBlue.withValues(alpha: 0.12),
+                              blurRadius: 10,
+                              offset: const Offset(0, 2),
+                            ),
+                          ]
+                        : [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.02),
+                              blurRadius: 4,
+                              offset: const Offset(0, 1),
+                            ),
+                          ],
                   ),
                   child: Row(
                     children: [
                       AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
-                        width: 36,
-                        height: 36,
+                        width: 38,
+                        height: 38,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: isSelected
-                              ? Colors.cyanAccent
-                              : Colors.white.withValues(alpha: 0.08),
+                              ? AppColors.primaryBlue
+                              : AppColors.creamSurfaceAlt,
                         ),
                         child: Center(
                           child: Text(
                             '#${node.id}',
                             style: TextStyle(
-                              color: isSelected ? Colors.black : Colors.white54,
+                              color: isSelected ? Colors.white : AppColors.textMuted,
                               fontWeight: FontWeight.bold,
                               fontSize: 12,
                             ),
                           ),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 14),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -308,23 +343,24 @@ class _HomeScreenState extends State<HomeScreen>
                               node.name,
                               style: TextStyle(
                                 color: isSelected
-                                    ? Colors.white
-                                    : Colors.white70,
+                                    ? AppColors.primaryBlue
+                                    : AppColors.textDark,
                                 fontWeight: FontWeight.w600,
                                 fontSize: 15,
                               ),
                             ),
+                            const SizedBox(height: 2),
                             Text(
                               '(${node.x.toStringAsFixed(2)}, ${node.y.toStringAsFixed(2)}, ${node.z.toStringAsFixed(2)})',
                               style: const TextStyle(
-                                  color: Colors.white30, fontSize: 11),
+                                  color: AppColors.textSubtle, fontSize: 11),
                             ),
                           ],
                         ),
                       ),
                       if (isSelected)
                         const Icon(Icons.check_circle_rounded,
-                            color: Colors.cyanAccent, size: 20),
+                            color: AppColors.primaryBlue, size: 22),
                     ],
                   ),
                 ),
@@ -335,7 +371,7 @@ class _HomeScreenState extends State<HomeScreen>
 
         // ── CTA Button ───────────────────────────────────────────────────────
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
           child: ElevatedButton.icon(
             icon: const Icon(Icons.navigation_rounded, size: 20),
             label: const Text(
@@ -343,12 +379,13 @@ class _HomeScreenState extends State<HomeScreen>
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.cyanAccent,
-              foregroundColor: Colors.black,
+              backgroundColor: AppColors.primaryBlue,
+              foregroundColor: Colors.white,
               minimumSize: const Size(double.infinity, 54),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14)),
-              elevation: 0,
+              elevation: 2,
+              shadowColor: AppColors.primaryBlue.withValues(alpha: 0.35),
             ),
             onPressed: _selectedStart == null
                 ? null
@@ -374,14 +411,18 @@ class _HomeScreenState extends State<HomeScreen>
 
 class _ActionCard extends StatefulWidget {
   final IconData icon;
-  final Color color;
+  final Color cardBg;
+  final Color accentColor;
+  final Color iconBg;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
 
   const _ActionCard({
     required this.icon,
-    required this.color,
+    required this.cardBg,
+    required this.accentColor,
+    required this.iconBg,
     required this.title,
     required this.subtitle,
     required this.onTap,
@@ -406,33 +447,37 @@ class _ActionCardState extends State<_ActionCard> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 120),
         transform: Matrix4.diagonal3Values(
-            _pressed ? 0.97 : 1.0, _pressed ? 0.97 : 1.0, 1.0),
+            _pressed ? 0.98 : 1.0, _pressed ? 0.98 : 1.0, 1.0),
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: widget.color.withValues(alpha: 0.08),
+          color: widget.cardBg,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: widget.color.withValues(alpha: _pressed ? 0.7 : 0.3),
-            width: 1.5,
+            color: _pressed ? widget.accentColor : AppColors.creamBorder,
+            width: _pressed ? 1.8 : 1,
           ),
           boxShadow: [
             BoxShadow(
-              color: widget.color.withValues(alpha: _pressed ? 0.12 : 0.05),
-              blurRadius: 20,
+              color: widget.accentColor.withValues(alpha: _pressed ? 0.12 : 0.04),
+              blurRadius: 14,
+              offset: const Offset(0, 3),
             ),
           ],
         ),
         child: Row(
           children: [
             Container(
-              width: 48,
-              height: 48,
+              width: 50,
+              height: 50,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: widget.color.withValues(alpha: 0.15),
-                border: Border.all(color: widget.color.withValues(alpha: 0.5)),
+                color: widget.iconBg,
+                border: Border.all(
+                  color: widget.accentColor.withValues(alpha: 0.2),
+                  width: 1,
+                ),
               ),
-              child: Icon(widget.icon, color: widget.color, size: 24),
+              child: Icon(widget.icon, color: widget.accentColor, size: 24),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -442,7 +487,7 @@ class _ActionCardState extends State<_ActionCard> {
                   Text(
                     widget.title,
                     style: const TextStyle(
-                      color: Colors.white,
+                      color: AppColors.textDark,
                       fontWeight: FontWeight.bold,
                       fontSize: 15,
                     ),
@@ -450,13 +495,13 @@ class _ActionCardState extends State<_ActionCard> {
                   const SizedBox(height: 4),
                   Text(
                     widget.subtitle,
-                    style: const TextStyle(color: Colors.white38, fontSize: 12),
+                    style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
                   ),
                 ],
               ),
             ),
             Icon(Icons.chevron_right_rounded,
-                color: widget.color.withValues(alpha: 0.6), size: 22),
+                color: widget.accentColor, size: 22),
           ],
         ),
       ),

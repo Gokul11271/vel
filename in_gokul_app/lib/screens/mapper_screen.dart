@@ -6,6 +6,7 @@ import '../models/edge.dart';
 import '../models/building_map.dart';
 import '../services/json_service.dart';
 import '../tracking/native_ar_position_provider.dart';
+import '../theme/app_theme.dart';
 
 /// Mobile Mapper Screen
 /// Walk a corridor tapping "+" to drop nodes at your current position.
@@ -44,7 +45,7 @@ class _MapperScreenState extends State<MapperScreen>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     )..repeat(reverse: true);
-    _pulseAnim = Tween<double>(begin: 0.85, end: 1.15).animate(
+    _pulseAnim = Tween<double>(begin: 0.90, end: 1.10).animate(
       CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
     );
   }
@@ -75,7 +76,7 @@ class _MapperScreenState extends State<MapperScreen>
       SnackBar(
         content: Text('📍 $name added'),
         duration: const Duration(milliseconds: 900),
-        backgroundColor: const Color(0xFF1A2035),
+        backgroundColor: AppColors.primaryBlue,
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -105,18 +106,18 @@ class _MapperScreenState extends State<MapperScreen>
     final result = await showDialog<String>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF1A2035),
-        title: const Text('Rename Node', style: TextStyle(color: Colors.white)),
+        backgroundColor: AppColors.creamSurface,
+        title: const Text('Rename Node', style: TextStyle(color: AppColors.textDark, fontWeight: FontWeight.bold)),
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          style: const TextStyle(color: Colors.white),
+          style: const TextStyle(color: AppColors.textDark),
           decoration: const InputDecoration(
             enabledBorder: UnderlineInputBorder(
-              borderSide: BorderSide(color: Colors.cyanAccent),
+              borderSide: BorderSide(color: AppColors.creamBorder),
             ),
             focusedBorder: UnderlineInputBorder(
-              borderSide: BorderSide(color: Colors.cyanAccent, width: 2),
+              borderSide: BorderSide(color: AppColors.primaryBlue, width: 2),
             ),
           ),
           onSubmitted: (v) => Navigator.pop(context, v),
@@ -124,11 +125,11 @@ class _MapperScreenState extends State<MapperScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel', style: TextStyle(color: Colors.white38)),
+            child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, ctrl.text.trim()),
-            child: const Text('Save', style: TextStyle(color: Colors.cyanAccent)),
+            child: const Text('Save', style: TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -165,7 +166,7 @@ class _MapperScreenState extends State<MapperScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Add at least 2 nodes before saving.'),
-          backgroundColor: Colors.redAccent,
+          backgroundColor: AppColors.error,
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -194,7 +195,7 @@ class _MapperScreenState extends State<MapperScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('✅ Map saved to ${file.path}'),
-            backgroundColor: Colors.green.shade800,
+            backgroundColor: AppColors.success,
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -204,7 +205,7 @@ class _MapperScreenState extends State<MapperScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('❌ Save failed: $e'),
-            backgroundColor: Colors.redAccent,
+            backgroundColor: AppColors.error,
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -219,33 +220,33 @@ class _MapperScreenState extends State<MapperScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0D17),
+      backgroundColor: AppColors.creamBg,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0D1120),
-        foregroundColor: Colors.white,
+        backgroundColor: AppColors.creamBg,
+        foregroundColor: AppColors.textDark,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text('🗺️ Mapper',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+                style: TextStyle(color: AppColors.textDark, fontWeight: FontWeight.bold, fontSize: 18)),
             Text(
               widget.buildingName,
-              style: const TextStyle(color: Colors.white38, fontSize: 12),
+              style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
             ),
           ],
         ),
         actions: [
           if (_nodes.isNotEmpty)
             IconButton(
-              icon: const Icon(Icons.undo_rounded, color: Colors.white54),
+              icon: const Icon(Icons.undo_rounded, color: AppColors.textMuted),
               tooltip: 'Undo last node',
               onPressed: _undoLast,
             ),
           if (_nodes.isNotEmpty)
             TextButton.icon(
-              icon: const Icon(Icons.flag_rounded, color: Colors.amberAccent, size: 18),
+              icon: const Icon(Icons.flag_rounded, color: AppColors.primaryBlue, size: 18),
               label: const Text('Mark Dest.',
-                  style: TextStyle(color: Colors.amberAccent, fontSize: 12)),
+                  style: TextStyle(color: AppColors.primaryBlue, fontSize: 13, fontWeight: FontWeight.bold)),
               onPressed: _markDestination,
             ),
         ],
@@ -275,9 +276,10 @@ class _MapperScreenState extends State<MapperScreen>
         scale: _pulseAnim,
         child: FloatingActionButton.large(
           onPressed: _addNode,
-          backgroundColor: Colors.cyanAccent,
-          foregroundColor: Colors.black,
+          backgroundColor: AppColors.primaryBlue,
+          foregroundColor: Colors.white,
           tooltip: 'Add node at current position',
+          elevation: 6,
           child: const Icon(Icons.add_location_alt_rounded, size: 34),
         ),
       ),
@@ -289,16 +291,16 @@ class _MapperScreenState extends State<MapperScreen>
   Widget _buildStatusBanner() {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.cyanAccent.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.cyanAccent.withValues(alpha: 0.2)),
+        color: AppColors.softBlue,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.softBlueBorder),
       ),
       child: Row(
         children: [
-          const Icon(Icons.my_location_rounded, color: Colors.cyanAccent, size: 18),
-          const SizedBox(width: 10),
+          const Icon(Icons.my_location_rounded, color: AppColors.primaryBlue, size: 20),
+          const SizedBox(width: 12),
           Expanded(
             child: Text(
               _nodes.isEmpty
@@ -306,7 +308,7 @@ class _MapperScreenState extends State<MapperScreen>
                   : '${_nodes.length} node${_nodes.length == 1 ? '' : 's'} mapped'
                       ' · ${_buildEdges().length ~/ 2} edges'
                       ' · Long-press to rename',
-              style: const TextStyle(color: Colors.cyanAccent, fontSize: 13),
+              style: const TextStyle(color: AppColors.primaryBlue, fontSize: 13, fontWeight: FontWeight.w500),
             ),
           ),
         ],
@@ -320,13 +322,13 @@ class _MapperScreenState extends State<MapperScreen>
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.map_outlined,
-              size: 72, color: Colors.white.withValues(alpha: 0.12)),
+              size: 72, color: AppColors.textSubtle.withValues(alpha: 0.4)),
           const SizedBox(height: 16),
           const Text('No nodes yet',
-              style: TextStyle(color: Colors.white38, fontSize: 16)),
+              style: TextStyle(color: AppColors.textMuted, fontSize: 16, fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
           const Text('Walk to a location and tap ➕',
-              style: TextStyle(color: Colors.white24, fontSize: 13)),
+              style: TextStyle(color: AppColors.textSubtle, fontSize: 13)),
         ],
       ),
     );
@@ -336,9 +338,16 @@ class _MapperScreenState extends State<MapperScreen>
     final node = _nodes[index];
     final isFirst = index == 0;
     final isLast = index == _nodes.length - 1;
-    Color dotColor = Colors.white38;
-    if (isFirst) dotColor = Colors.cyanAccent;
-    if (isLast && _nodes.length > 1) dotColor = Colors.amberAccent;
+    Color dotBg = AppColors.softBlue;
+    Color dotColor = AppColors.primaryBlue;
+    if (isFirst) {
+      dotBg = AppColors.primaryBlue;
+      dotColor = Colors.white;
+    }
+    if (isLast && _nodes.length > 1) {
+      dotBg = const Color(0xFFFEF3C7);
+      dotColor = AppColors.warning;
+    }
 
     return GestureDetector(
       onLongPress: () => _renameNode(index),
@@ -346,20 +355,27 @@ class _MapperScreenState extends State<MapperScreen>
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: dotColor.withValues(alpha: 0.3)),
+          color: AppColors.creamSurface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: isFirst ? AppColors.primaryBlue : AppColors.creamBorder),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.02),
+              blurRadius: 4,
+              offset: const Offset(0, 1),
+            ),
+          ],
         ),
         child: Row(
           children: [
             // Step dot
             Container(
-              width: 32,
-              height: 32,
+              width: 34,
+              height: 34,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: dotColor.withValues(alpha: 0.15),
-                border: Border.all(color: dotColor, width: 1.5),
+                color: dotBg,
+                border: Border.all(color: dotColor.withValues(alpha: 0.4), width: 1.5),
               ),
               child: Center(
                 child: Text(
@@ -378,22 +394,22 @@ class _MapperScreenState extends State<MapperScreen>
                 children: [
                   Text(node.name,
                       style: const TextStyle(
-                          color: Colors.white,
+                          color: AppColors.textDark,
                           fontWeight: FontWeight.w600,
                           fontSize: 14)),
                   Text(
                     '(${node.x.toStringAsFixed(2)}, ${node.y.toStringAsFixed(2)}, ${node.z.toStringAsFixed(2)})',
-                    style: const TextStyle(color: Colors.white30, fontSize: 11),
+                    style: const TextStyle(color: AppColors.textSubtle, fontSize: 11),
                   ),
                 ],
               ),
             ),
             if (isFirst)
               const Icon(Icons.door_front_door_rounded,
-                  color: Colors.cyanAccent, size: 16),
+                  color: AppColors.primaryBlue, size: 18),
             if (isLast && _nodes.length > 1)
               const Icon(Icons.flag_rounded,
-                  color: Colors.amberAccent, size: 16),
+                  color: AppColors.warning, size: 18),
           ],
         ),
       ),
@@ -414,16 +430,17 @@ class _MapperScreenState extends State<MapperScreen>
                         width: 16,
                         height: 16,
                         child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.black),
+                            strokeWidth: 2, color: Colors.white),
                       )
                     : const Icon(Icons.save_rounded, size: 18),
                 label: Text(_saving ? 'Saving…' : '💾 Save Map'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.cyanAccent,
-                  foregroundColor: Colors.black,
+                  backgroundColor: AppColors.primaryBlue,
+                  foregroundColor: Colors.white,
                   minimumSize: const Size(0, 50),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
+                      borderRadius: BorderRadius.circular(14)),
+                  elevation: 2,
                 ),
                 onPressed: _saving || _nodes.length < 2 ? null : _saveMap,
               ),
@@ -434,5 +451,3 @@ class _MapperScreenState extends State<MapperScreen>
     );
   }
 }
-
-

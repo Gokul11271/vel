@@ -10,6 +10,7 @@ import '../ar/ar_manager.dart';
 import '../ar/ar_path_painter.dart';
 import '../services/camera_service.dart';
 import '../tracking/native_ar_position_provider.dart';
+import '../theme/app_theme.dart';
 import '../widgets/debug_overlay.dart';
 import '../widgets/fps_counter.dart';
 import '../widgets/waypoint_marker.dart';
@@ -183,10 +184,10 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
         final isFacingTarget = bearRad.abs() < (20 * pi / 180);
         final isTurningAround = bearRad.abs() > (130 * pi / 180);
         final arrowColor = isFacingTarget
-            ? Colors.greenAccent
+            ? AppColors.lightBlue
             : isTurningAround
-                ? Colors.amberAccent
-                : arrow.color;
+                ? AppColors.warning
+                : AppColors.accentBlue;
 
         final totalNodes = widget.controller.path.length;
         final progress = totalNodes < 2
@@ -291,7 +292,7 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
                 ),
               ),
 
-              // ── 4. Waypoint-reached green flash ───────────────────────────
+              // ── 4. Waypoint-reached blue flash ───────────────────────────
               AnimatedBuilder(
                 animation: _flashController,
                 builder: (ctx, child) {
@@ -303,7 +304,7 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
                           : (1.0 - t) / 0.3;
                   if (t == 0) return const SizedBox.shrink();
                   return Container(
-                    color: Colors.greenAccent.withValues(alpha: opacity * 0.18),
+                    color: AppColors.lightBlue.withValues(alpha: opacity * 0.22),
                   );
                 },
               ),
@@ -476,7 +477,7 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
                   child: Padding(
                     padding: const EdgeInsets.all(14.0),
                     child: Card(
-                      color: const Color(0xFF161B2B).withValues(alpha: 0.93),
+                      color: AppColors.navyDark.withValues(alpha: 0.94),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(18),
                         side: BorderSide(
@@ -582,12 +583,12 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
                               height: 90 + pulse * 20,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                color: Colors.greenAccent
-                                    .withValues(alpha: 0.08 + pulse * 0.10),
+                                color: AppColors.lightBlue
+                                    .withValues(alpha: 0.10 + pulse * 0.10),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.greenAccent
-                                        .withValues(alpha: 0.3 + pulse * 0.2),
+                                    color: AppColors.primaryBlue
+                                        .withValues(alpha: 0.4 + pulse * 0.25),
                                     blurRadius: 40 + pulse * 20,
                                     spreadRadius: 4,
                                   ),
@@ -595,7 +596,7 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
                               ),
                               child: const Icon(
                                 Icons.place_rounded,
-                                color: Colors.greenAccent,
+                                color: AppColors.lightBlue,
                                 size: 48,
                               ),
                             ),
@@ -603,8 +604,8 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
                             Text(
                               '🎉  ${widget.targetNode.name}',
                               style: TextStyle(
-                                color: Colors.greenAccent
-                                    .withValues(alpha: 0.8 + pulse * 0.2),
+                                color: AppColors.lightBlue
+                                    .withValues(alpha: 0.85 + pulse * 0.15),
                                 fontWeight: FontWeight.bold,
                                 fontSize: 18,
                               ),

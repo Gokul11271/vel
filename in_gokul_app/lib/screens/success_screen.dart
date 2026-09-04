@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../models/node.dart';
+import '../theme/app_theme.dart';
 
 /// Full-screen animated destination-reached success screen.
 class SuccessScreen extends StatefulWidget {
@@ -71,22 +72,22 @@ class _SuccessScreenState extends State<SuccessScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF0F172A),
       body: FadeTransition(
         opacity: _fadeAnim,
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Background gradient
+            // Background gradient in deep royal navy
             Container(
               decoration: const BoxDecoration(
                 gradient: RadialGradient(
                   center: Alignment(0, -0.3),
                   radius: 1.4,
                   colors: [
-                    Color(0xFF0D2B1A),
-                    Color(0xFF06100E),
-                    Colors.black,
+                    Color(0xFF1E3A8A),
+                    Color(0xFF0F172A),
+                    Color(0xFF0A0F1D),
                   ],
                 ),
               ),
@@ -116,11 +117,11 @@ class _SuccessScreenState extends State<SuccessScreen>
                       height: 140,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: Colors.greenAccent.withValues(alpha: 0.15),
-                        border: Border.all(color: Colors.greenAccent, width: 3),
+                        color: AppColors.primaryBlue.withValues(alpha: 0.35),
+                        border: Border.all(color: AppColors.lightBlue, width: 3),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.greenAccent.withValues(alpha: 0.4),
+                            color: AppColors.lightBlue.withValues(alpha: 0.45),
                             blurRadius: 40,
                             spreadRadius: 8,
                           ),
@@ -129,7 +130,7 @@ class _SuccessScreenState extends State<SuccessScreen>
                       child: const Icon(
                         Icons.check_rounded,
                         size: 80,
-                        color: Colors.greenAccent,
+                        color: Colors.white,
                       ),
                     ),
                   ),
@@ -140,7 +141,7 @@ class _SuccessScreenState extends State<SuccessScreen>
                   const Text(
                     'Destination Reached!',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: AppColors.textLight,
                       fontSize: 28,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 0.5,
@@ -150,8 +151,8 @@ class _SuccessScreenState extends State<SuccessScreen>
                   Text(
                     widget.destination.name,
                     style: const TextStyle(
-                      color: Colors.greenAccent,
-                      fontSize: 18,
+                      color: AppColors.lightBlue,
+                      fontSize: 20,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -168,19 +169,19 @@ class _SuccessScreenState extends State<SuccessScreen>
                           icon: Icons.route_rounded,
                           value: '${widget.totalWaypoints}',
                           label: 'Waypoints',
-                          color: Colors.cyanAccent,
+                          color: AppColors.lightBlue,
                         ),
                         _buildStatCard(
                           icon: Icons.straighten_rounded,
                           value: '${widget.totalDistance.toStringAsFixed(1)}m',
                           label: 'Distance',
-                          color: Colors.purpleAccent,
+                          color: const Color(0xFF60A5FA),
                         ),
                         _buildStatCard(
                           icon: Icons.directions_walk_rounded,
                           value: '${widget.totalSteps}',
                           label: 'Steps',
-                          color: Colors.amberAccent,
+                          color: AppColors.warning,
                         ),
                       ],
                     ),
@@ -201,13 +202,14 @@ class _SuccessScreenState extends State<SuccessScreen>
                             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                           ),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.greenAccent,
-                            foregroundColor: Colors.black,
+                            backgroundColor: AppColors.primaryBlue,
+                            foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(14),
                             ),
-                            elevation: 0,
+                            elevation: 4,
+                            shadowColor: AppColors.primaryBlue.withValues(alpha: 0.5),
                           ),
                           onPressed: () {
                             // Pop to root
@@ -219,11 +221,11 @@ class _SuccessScreenState extends State<SuccessScreen>
                           icon: const Icon(Icons.navigation_rounded, size: 20),
                           label: const Text(
                             'Navigate Again',
-                            style: TextStyle(fontSize: 15),
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                           ),
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white70,
-                            side: const BorderSide(color: Colors.white24),
+                            foregroundColor: AppColors.textLight,
+                            side: BorderSide(color: AppColors.lightBlue.withValues(alpha: 0.5)),
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(14),
@@ -259,9 +261,9 @@ class _SuccessScreenState extends State<SuccessScreen>
       width: 90,
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
       ),
       child: Column(
         children: [
@@ -278,7 +280,7 @@ class _SuccessScreenState extends State<SuccessScreen>
           const SizedBox(height: 2),
           Text(
             label,
-            style: const TextStyle(color: Colors.white38, fontSize: 11),
+            style: const TextStyle(color: Colors.white60, fontSize: 11),
           ),
         ],
       ),
@@ -303,7 +305,7 @@ class _BurstPainter extends CustomPainter {
       final opacity = (1.0 - progress).clamp(0.0, 1.0);
 
       final paint = Paint()
-        ..color = Colors.greenAccent.withValues(alpha: opacity * 0.5)
+        ..color = AppColors.lightBlue.withValues(alpha: opacity * 0.5)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2;
 
@@ -311,7 +313,7 @@ class _BurstPainter extends CustomPainter {
         center.dx + cos(angle) * radius,
         center.dy + sin(angle) * radius,
       );
-      canvas.drawCircle(offset, 3 + progress * 5, paint..style = PaintingStyle.fill..color = Colors.greenAccent.withValues(alpha: opacity * 0.7));
+      canvas.drawCircle(offset, 3 + progress * 5, paint..style = PaintingStyle.fill..color = AppColors.lightBlue.withValues(alpha: opacity * 0.7));
     }
 
     // Expanding ring
@@ -319,7 +321,7 @@ class _BurstPainter extends CustomPainter {
       final ring = (progress - r * 0.12).clamp(0.0, 1.0);
       if (ring <= 0) continue;
       final ringPaint = Paint()
-        ..color = Colors.greenAccent.withValues(alpha: (1 - ring) * 0.25)
+        ..color = AppColors.lightBlue.withValues(alpha: (1 - ring) * 0.30)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2;
       canvas.drawCircle(center, ring * 200 + r * 30, ringPaint);

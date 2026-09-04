@@ -6,6 +6,7 @@ import '../models/graph.dart';
 import '../models/node.dart';
 import '../algorithms/dijkstra.dart';
 import '../services/json_service.dart';
+import '../theme/app_theme.dart';
 import 'navigation_screen.dart';
 
 /// QR scan screen — Phase B of the Indoor AR Navigation prototype.
@@ -180,7 +181,7 @@ class _QrScanScreenState extends State<QrScanScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0D17),
+      backgroundColor: _phase == _Phase.confirm ? AppColors.creamBg : const Color(0xFF0F172A),
       body: Stack(
         children: [
           // Phase content
@@ -200,11 +201,24 @@ class _QrScanScreenState extends State<QrScanScreen>
                 icon: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.black54,
+                    color: _phase == _Phase.confirm
+                        ? AppColors.creamSurface
+                        : Colors.black54,
                     borderRadius: BorderRadius.circular(12),
+                    border: _phase == _Phase.confirm
+                        ? Border.all(color: AppColors.creamBorder)
+                        : null,
+                    boxShadow: [
+                      if (_phase == _Phase.confirm)
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.04),
+                          blurRadius: 4,
+                        ),
+                    ],
                   ),
-                  child: const Icon(Icons.arrow_back_ios_new,
-                      color: Colors.white, size: 18),
+                  child: Icon(Icons.arrow_back_ios_new,
+                      color: _phase == _Phase.confirm ? AppColors.textDark : Colors.white,
+                      size: 18),
                 ),
               ),
             ),
@@ -255,7 +269,7 @@ class _QrScanScreenState extends State<QrScanScreen>
               Text(
                 'Point camera at the entrance QR code',
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.6),
+                  color: Colors.white.withValues(alpha: 0.7),
                   fontSize: 14,
                 ),
               ),
@@ -272,14 +286,14 @@ class _QrScanScreenState extends State<QrScanScreen>
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                        color: Colors.cyanAccent
+                        color: AppColors.lightBlue
                             .withValues(alpha: 0.5 + glow * 0.5),
                         width: 2.5,
                       ),
                       boxShadow: [
                         BoxShadow(
                           color:
-                              Colors.cyanAccent.withValues(alpha: glow * 0.3),
+                              AppColors.primaryBlue.withValues(alpha: glow * 0.35),
                           blurRadius: 30,
                           spreadRadius: 4,
                         ),
@@ -299,7 +313,7 @@ class _QrScanScreenState extends State<QrScanScreen>
                               gradient: LinearGradient(
                                 colors: [
                                   Colors.transparent,
-                                  Colors.cyanAccent,
+                                  AppColors.lightBlue,
                                   Colors.transparent,
                                 ],
                               ),
@@ -318,20 +332,20 @@ class _QrScanScreenState extends State<QrScanScreen>
                 child: Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.05),
+                    color: AppColors.navyDark.withValues(alpha: 0.85),
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: Colors.white12),
+                    border: Border.all(color: AppColors.lightBlue.withValues(alpha: 0.4)),
                   ),
                   child: const Row(
                     children: [
                       Icon(Icons.info_outline_rounded,
-                          color: Colors.white38, size: 16),
+                          color: AppColors.lightBlue, size: 16),
                       SizedBox(width: 10),
                       Expanded(
                         child: Text(
                           '{"building":"main_block","entrance":1}',
                           style: TextStyle(
-                            color: Colors.white38,
+                            color: Colors.white70,
                             fontSize: 11,
                             fontFamily: 'monospace',
                           ),
@@ -351,7 +365,7 @@ class _QrScanScreenState extends State<QrScanScreen>
   List<Widget> _buildCorners() {
     const s = 22.0;
     const t = 3.0;
-    const c = Colors.cyanAccent;
+    const c = AppColors.lightBlue;
     return [
       Positioned(top: 0, left: 0,
           child: _Corner(size: s, thick: t, color: c, top: true, left: true)),
@@ -371,7 +385,7 @@ class _QrScanScreenState extends State<QrScanScreen>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          CircularProgressIndicator(color: Colors.cyanAccent),
+          CircularProgressIndicator(color: AppColors.primaryBlue),
           SizedBox(height: 20),
           Text('Loading building map…',
               style: TextStyle(color: Colors.white70, fontSize: 16)),
@@ -409,12 +423,12 @@ class _QrScanScreenState extends State<QrScanScreen>
                     height: 48,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: Colors.cyanAccent.withValues(alpha: 0.15),
+                      color: AppColors.softBlue,
                       border: Border.all(
-                          color: Colors.cyanAccent.withValues(alpha: 0.6)),
+                          color: AppColors.primaryBlue.withValues(alpha: 0.4)),
                     ),
                     child: const Icon(Icons.domain_rounded,
-                        color: Colors.cyanAccent, size: 24),
+                        color: AppColors.primaryBlue, size: 24),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -424,7 +438,7 @@ class _QrScanScreenState extends State<QrScanScreen>
                         Text(
                           map.buildingName,
                           style: const TextStyle(
-                            color: Colors.white,
+                            color: AppColors.textDark,
                             fontSize: 20,
                             fontWeight: FontWeight.bold,
                           ),
@@ -432,7 +446,7 @@ class _QrScanScreenState extends State<QrScanScreen>
                         Text(
                           '${map.nodes.length} nodes  •  ${map.buildingId}',
                           style: const TextStyle(
-                              color: Colors.white38, fontSize: 12),
+                              color: AppColors.textMuted, fontSize: 12),
                         ),
                       ],
                     ),
@@ -443,12 +457,12 @@ class _QrScanScreenState extends State<QrScanScreen>
                     icon: Container(
                       padding: const EdgeInsets.all(6),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.06),
+                        color: AppColors.creamSurface,
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.white12),
+                        border: Border.all(color: AppColors.creamBorder),
                       ),
                       child: const Icon(Icons.qr_code_scanner_rounded,
-                          color: Colors.white54, size: 18),
+                          color: AppColors.primaryBlue, size: 18),
                     ),
                   ),
                 ],
@@ -464,21 +478,21 @@ class _QrScanScreenState extends State<QrScanScreen>
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
-                  color: Colors.greenAccent.withValues(alpha: 0.08),
+                  color: AppColors.softBlue,
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
-                      color: Colors.greenAccent.withValues(alpha: 0.45)),
+                      color: AppColors.softBlueBorder),
                 ),
                 child: Row(
                   children: [
                     const Icon(Icons.my_location,
-                        color: Colors.greenAccent, size: 18),
+                        color: AppColors.primaryBlue, size: 18),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         'Stand at entrance: ${entrance.name}',
                         style: const TextStyle(
-                          color: Colors.greenAccent,
+                          color: AppColors.primaryBlue,
                           fontWeight: FontWeight.w600,
                           fontSize: 13,
                         ),
@@ -488,13 +502,13 @@ class _QrScanScreenState extends State<QrScanScreen>
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: Colors.greenAccent.withValues(alpha: 0.15),
+                        color: AppColors.primaryBlue,
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: const Text(
                         '✓ QR OK',
                         style: TextStyle(
-                          color: Colors.greenAccent,
+                          color: Colors.white,
                           fontWeight: FontWeight.bold,
                           fontSize: 11,
                         ),
@@ -511,10 +525,10 @@ class _QrScanScreenState extends State<QrScanScreen>
               child: Text(
                 'WHERE DO YOU WANT TO GO?',
                 style: TextStyle(
-                  color: Colors.white38,
+                  color: AppColors.textSubtle,
                   fontSize: 11,
                   fontWeight: FontWeight.bold,
-                  letterSpacing: 2,
+                  letterSpacing: 1.2,
                 ),
               ),
             ),
@@ -538,14 +552,21 @@ class _QrScanScreenState extends State<QrScanScreen>
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(14),
                         color: isSelected
-                            ? Colors.cyanAccent.withValues(alpha: 0.12)
-                            : Colors.white.withValues(alpha: 0.04),
+                            ? AppColors.softBlue
+                            : AppColors.creamSurface,
                         border: Border.all(
                           color: isSelected
-                              ? Colors.cyanAccent
-                              : Colors.white.withValues(alpha: 0.08),
-                          width: isSelected ? 1.5 : 1,
+                              ? AppColors.primaryBlue
+                              : AppColors.creamBorder,
+                          width: isSelected ? 1.8 : 1,
                         ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.02),
+                            blurRadius: 4,
+                            offset: const Offset(0, 1),
+                          ),
+                        ],
                       ),
                       child: Row(
                         children: [
@@ -555,16 +576,16 @@ class _QrScanScreenState extends State<QrScanScreen>
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               color: isSelected
-                                  ? Colors.cyanAccent
-                                  : Colors.white.withValues(alpha: 0.06),
+                                  ? AppColors.primaryBlue
+                                  : AppColors.creamSurfaceAlt,
                             ),
                             child: Center(
                               child: Text(
                                 '#${node.id}',
                                 style: TextStyle(
                                   color: isSelected
-                                      ? Colors.black
-                                      : Colors.white38,
+                                      ? Colors.white
+                                      : AppColors.textMuted,
                                   fontWeight: FontWeight.bold,
                                   fontSize: 12,
                                 ),
@@ -577,7 +598,7 @@ class _QrScanScreenState extends State<QrScanScreen>
                               node.name,
                               style: TextStyle(
                                 color:
-                                    isSelected ? Colors.white : Colors.white70,
+                                    isSelected ? AppColors.primaryBlue : AppColors.textDark,
                                 fontWeight: FontWeight.w600,
                                 fontSize: 15,
                               ),
@@ -585,7 +606,7 @@ class _QrScanScreenState extends State<QrScanScreen>
                           ),
                           if (isSelected)
                             const Icon(Icons.check_circle_rounded,
-                                color: Colors.cyanAccent, size: 20),
+                                color: AppColors.primaryBlue, size: 20),
                         ],
                       ),
                     ),
@@ -605,15 +626,16 @@ class _QrScanScreenState extends State<QrScanScreen>
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _selectedDestination != null
-                      ? Colors.cyanAccent
-                      : Colors.white12,
+                      ? AppColors.primaryBlue
+                      : AppColors.creamSurfaceAlt,
                   foregroundColor: _selectedDestination != null
-                      ? Colors.black
-                      : Colors.white38,
+                      ? Colors.white
+                      : AppColors.textSubtle,
                   minimumSize: const Size(double.infinity, 54),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14)),
-                  elevation: 0,
+                  elevation: _selectedDestination != null ? 2 : 0,
+                  shadowColor: AppColors.primaryBlue.withValues(alpha: 0.35),
                 ),
                 onPressed: _selectedDestination != null ? _startNavigation : null,
               ),
@@ -634,7 +656,7 @@ class _QrScanScreenState extends State<QrScanScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             const Icon(Icons.error_outline_rounded,
-                size: 56, color: Colors.redAccent),
+                size: 56, color: AppColors.error),
             const SizedBox(height: 16),
             const Text(
               'Could not load building',
@@ -647,15 +669,15 @@ class _QrScanScreenState extends State<QrScanScreen>
             Text(
               _errorMessage ?? 'Unknown error',
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white54, fontSize: 13),
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
             ),
             const SizedBox(height: 28),
             ElevatedButton.icon(
               icon: const Icon(Icons.refresh),
               label: const Text('Try Again'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.cyanAccent,
-                foregroundColor: Colors.black,
+                backgroundColor: AppColors.primaryBlue,
+                foregroundColor: Colors.white,
                 minimumSize: const Size(200, 50),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14)),

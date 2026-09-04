@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'screens/home_screen.dart';
+import 'theme/app_theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -9,12 +10,13 @@ void main() {
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
-  // Transparent status bar over camera feed
+  // Transparent status bar over camera/pages with dark icons for cream theme
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.light,
-      systemNavigationBarColor: Colors.black,
+      statusBarIconBrightness: Brightness.dark,
+      systemNavigationBarColor: AppColors.creamBg,
+      systemNavigationBarIconBrightness: Brightness.dark,
     ),
   );
   runApp(const IndoorNavigationApp());
@@ -28,36 +30,9 @@ class IndoorNavigationApp extends StatelessWidget {
     return MaterialApp(
       title: 'Indoor AR Navigator',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: const ColorScheme.dark(
-          primary: Color(0xFF00E5FF),      // cyanAccent
-          secondary: Color(0xFF7C4DFF),    // deepPurpleAccent
-          surface: Color(0xFF161B2B),
-          onPrimary: Colors.black,
-          onSecondary: Colors.white,
-          onSurface: Colors.white,
-        ),
-        scaffoldBackgroundColor: const Color(0xFF0A0D17),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF0A0D17),
-          foregroundColor: Colors.white,
-          elevation: 0,
-          centerTitle: false,
-        ),
-        cardTheme: CardThemeData(
-          color: const Color(0xFF161B2B),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          elevation: 0,
-        ),
-        textTheme: const TextTheme(
-          bodyLarge: TextStyle(color: Colors.white),
-          bodyMedium: TextStyle(color: Colors.white70),
-          bodySmall: TextStyle(color: Colors.white54),
-        ),
-        iconTheme: const IconThemeData(color: Colors.white),
-      ),
+      theme: AppTheme.lightTheme,
       home: const HomeScreen(),
     );
   }
 }
+

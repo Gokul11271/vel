@@ -7,6 +7,7 @@ import '../algorithms/dijkstra.dart';
 import '../services/world_alignment_service.dart';
 import '../services/camera_service.dart';
 import '../tracking/native_ar_position_provider.dart';
+import '../theme/app_theme.dart';
 import '../ar/ar_manager.dart';
 import 'ar_navigation_screen.dart';
 
@@ -98,7 +99,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> with SingleTicker
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('✅ World Alignment Calibrated Successfully!'),
-        backgroundColor: Colors.green,
+        backgroundColor: AppColors.primaryBlue,
         duration: Duration(milliseconds: 900),
       ),
     );
@@ -161,7 +162,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> with SingleTicker
                 Container(
                   decoration: const BoxDecoration(
                     gradient: LinearGradient(
-                      colors: [Color(0xFF0F121E), Color(0xFF1E2337)],
+                      colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
                     ),
@@ -182,6 +183,10 @@ class _CalibrationScreenState extends State<CalibrationScreen> with SingleTicker
                           ElevatedButton.icon(
                             icon: const Icon(Icons.refresh),
                             label: const Text('Retry Camera Access'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.accentBlue,
+                              foregroundColor: Colors.white,
+                            ),
                             onPressed: _setupCamera,
                           ),
                         ],
@@ -195,10 +200,10 @@ class _CalibrationScreenState extends State<CalibrationScreen> with SingleTicker
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
-                      Colors.black.withValues(alpha: 0.7),
+                      Colors.black.withValues(alpha: 0.72),
                       Colors.transparent,
                       Colors.transparent,
-                      Colors.black.withValues(alpha: 0.85),
+                      Colors.black.withValues(alpha: 0.88),
                     ],
                     stops: const [0.0, 0.2, 0.65, 1.0],
                     begin: Alignment.topCenter,
@@ -223,7 +228,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> with SingleTicker
                             height: 200,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              border: Border.all(color: Colors.cyanAccent.withValues(alpha: 0.4), width: 2),
+                              border: Border.all(color: AppColors.lightBlue.withValues(alpha: 0.4), width: 2),
                             ),
                           ),
                         ),
@@ -233,8 +238,14 @@ class _CalibrationScreenState extends State<CalibrationScreen> with SingleTicker
                           height: 150,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            border: Border.all(color: Colors.cyanAccent, width: 2),
-                            color: Colors.cyanAccent.withValues(alpha: 0.08),
+                            border: Border.all(color: AppColors.lightBlue, width: 2.5),
+                            color: AppColors.primaryBlue.withValues(alpha: 0.15),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.accentBlue.withValues(alpha: 0.3),
+                                blurRadius: 20,
+                              ),
+                            ],
                           ),
                         ),
                         // Center Calibration Icon
@@ -244,7 +255,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> with SingleTicker
                             const Icon(
                               Icons.explore_rounded,
                               size: 56,
-                              color: Colors.cyanAccent,
+                              color: AppColors.lightBlue,
                             ),
                             const SizedBox(height: 4),
                             Text(
@@ -260,18 +271,18 @@ class _CalibrationScreenState extends State<CalibrationScreen> with SingleTicker
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 14),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                       decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.6),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.cyanAccent.withValues(alpha: 0.5)),
+                        color: AppColors.navyDark.withValues(alpha: 0.8),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: AppColors.lightBlue.withValues(alpha: 0.6)),
                       ),
                       child: const Text(
                         'ALIGN CAMERA DOWN CORRIDOR',
                         style: TextStyle(
-                          color: Colors.cyanAccent,
+                          color: AppColors.lightBlue,
                           fontWeight: FontWeight.bold,
                           fontSize: 11,
                           letterSpacing: 2,
@@ -306,14 +317,14 @@ class _CalibrationScreenState extends State<CalibrationScreen> with SingleTicker
                           ),
                           // Tracking Badge
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                             decoration: BoxDecoration(
                               color: isTrackingGood
-                                  ? Colors.green.withValues(alpha: 0.25)
+                                  ? AppColors.primaryBlue.withValues(alpha: 0.3)
                                   : Colors.amber.withValues(alpha: 0.25),
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
-                                color: isTrackingGood ? Colors.greenAccent : Colors.amberAccent,
+                                color: isTrackingGood ? AppColors.lightBlue : Colors.amberAccent,
                               ),
                             ),
                             child: Row(
@@ -321,14 +332,14 @@ class _CalibrationScreenState extends State<CalibrationScreen> with SingleTicker
                               children: [
                                 Icon(
                                   isTrackingGood ? Icons.sensors : Icons.sensors_off,
-                                  color: isTrackingGood ? Colors.greenAccent : Colors.amberAccent,
+                                  color: isTrackingGood ? AppColors.lightBlue : Colors.amberAccent,
                                   size: 14,
                                 ),
                                 const SizedBox(width: 6),
                                 Text(
                                   trackingState.label,
                                   style: TextStyle(
-                                    color: isTrackingGood ? Colors.greenAccent : Colors.amberAccent,
+                                    color: isTrackingGood ? Colors.white : Colors.amberAccent,
                                     fontWeight: FontWeight.bold,
                                     fontSize: 10,
                                   ),
@@ -356,19 +367,19 @@ class _CalibrationScreenState extends State<CalibrationScreen> with SingleTicker
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Card(
-                          color: const Color(0xFF161B2B).withValues(alpha: 0.9),
+                          color: const Color(0xFF0F172A).withValues(alpha: 0.92),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                            borderRadius: BorderRadius.circular(18),
+                            side: BorderSide(color: AppColors.lightBlue.withValues(alpha: 0.3), width: 1.5),
                           ),
                           child: Padding(
-                            padding: const EdgeInsets.all(14.0),
+                            padding: const EdgeInsets.all(16.0),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Row(
                                   children: [
-                                    const Icon(Icons.pin_drop, color: Colors.cyanAccent, size: 20),
+                                    const Icon(Icons.pin_drop, color: AppColors.lightBlue, size: 20),
                                     const SizedBox(width: 8),
                                     Expanded(
                                       child: Text(
@@ -381,19 +392,20 @@ class _CalibrationScreenState extends State<CalibrationScreen> with SingleTicker
                                       ),
                                     ),
                                     Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                       decoration: BoxDecoration(
-                                        color: Colors.cyanAccent.withValues(alpha: 0.2),
+                                        color: AppColors.primaryBlue.withValues(alpha: 0.35),
                                         borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: AppColors.lightBlue.withValues(alpha: 0.5)),
                                       ),
                                       child: Text(
                                         'Node #${widget.startNode.id}',
-                                        style: const TextStyle(color: Colors.cyanAccent, fontSize: 11),
+                                        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
                                       ),
                                     ),
                                   ],
                                 ),
-                                const Divider(color: Colors.white12, height: 16),
+                                const Divider(color: Colors.white12, height: 18),
                                 _buildStepRow(1, 'Stand directly at ${widget.startNode.name}'),
                                 const SizedBox(height: 6),
                                 _buildStepRow(2, 'Point camera straight forward along hallway'),
@@ -409,7 +421,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> with SingleTicker
                               ? const SizedBox(
                                   width: 20,
                                   height: 20,
-                                  child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2),
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                                 )
                               : const Icon(Icons.center_focus_strong, size: 22),
                           label: Text(
@@ -417,11 +429,12 @@ class _CalibrationScreenState extends State<CalibrationScreen> with SingleTicker
                             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                           ),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.cyanAccent,
-                            foregroundColor: Colors.black,
+                            backgroundColor: AppColors.primaryBlue,
+                            foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                            elevation: 8,
+                            elevation: 4,
+                            shadowColor: AppColors.primaryBlue.withValues(alpha: 0.5),
                           ),
                           onPressed: _isCalibrating ? null : _onCalibratePressed,
                         ),
@@ -443,17 +456,17 @@ class _CalibrationScreenState extends State<CalibrationScreen> with SingleTicker
       children: [
         CircleAvatar(
           radius: 9,
-          backgroundColor: Colors.cyanAccent.withValues(alpha: 0.2),
+          backgroundColor: AppColors.accentBlue,
           child: Text(
             '$number',
-            style: const TextStyle(fontSize: 10, color: Colors.cyanAccent, fontWeight: FontWeight.bold),
+            style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold),
           ),
         ),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
             text,
-            style: const TextStyle(color: Colors.white70, fontSize: 12),
+            style: const TextStyle(color: Color(0xFFF1F5F9), fontSize: 12),
           ),
         ),
       ],
