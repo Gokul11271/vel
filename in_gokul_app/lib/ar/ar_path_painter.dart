@@ -171,41 +171,58 @@ class ARPathPainter extends CustomPainter {
     }
   }
 
-  // ─── Floor Chevron Arrow ──────────────────────────────────────────────────
+  // ─── Floor Chevron Arrows (multiple, every 1 m) ──────────────────────────
 
+  /// Draws chevron arrows on the floor at 1 m, 2 m, 3 m, and 4 m.
+  /// Each subsequent arrow is smaller and more transparent, conveying depth.
+  ///
+  ///  ▶  1 m — 40 px, 100 % opacity
+  ///  ▶  2 m — 30 px,  80 % opacity
+  ///  ▶  3 m — 22 px,  55 % opacity
+  ///  ▶  4 m — 16 px,  30 % opacity
   void _drawFloorChevron(Canvas canvas, Size size) {
-    // Draw a "V" chevron painted on the floor at ~1.8m ahead
-    const chevronDist = 1.8;
-    final tip = _project(chevronDist, 0, size);
-    final lWing = _project(chevronDist + 0.5, -0.42, size);
-    final rWing = _project(chevronDist + 0.5, 0.42, size);
-    final lTail = _project(chevronDist + 0.85, -0.22, size);
-    final rTail = _project(chevronDist + 0.85, 0.22, size);
+    const arrowSpecs = [
+      (dist: 1.0, halfWidth: 0.42, tailDist: 0.50, tailHalf: 0.22, alpha: 1.00),
+      (dist: 2.0, halfWidth: 0.35, tailDist: 0.42, tailHalf: 0.18, alpha: 0.80),
+      (dist: 3.0, halfWidth: 0.27, tailDist: 0.34, tailHalf: 0.14, alpha: 0.55),
+      (dist: 4.0, halfWidth: 0.20, tailDist: 0.26, tailHalf: 0.10, alpha: 0.30),
+    ];
 
-    final chevPath = Path()
-      ..moveTo(tip.dx, tip.dy)
-      ..lineTo(lWing.dx, lWing.dy)
-      ..lineTo(lTail.dx, lTail.dy)
-      ..lineTo(tip.dx, tip.dy)
-      ..lineTo(rTail.dx, rTail.dy)
-      ..lineTo(rWing.dx, rWing.dy)
-      ..close();
+    for (final spec in arrowSpecs) {
+      if (spec.dist > distanceToNext + 0.5) break; // don't draw past the target
 
-    canvas.drawPath(
-      chevPath,
-      Paint()
-        ..color = primaryColor.withValues(alpha: 0.75)
-        ..style = PaintingStyle.fill,
-    );
-    canvas.drawPath(
-      chevPath,
-      Paint()
-        ..color = primaryColor
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
-    );
+      final tip   = _project(spec.dist, 0, size);
+      final lWing = _project(spec.dist + spec.tailDist, -spec.halfWidth, size);
+      final rWing = _project(spec.dist + spec.tailDist,  spec.halfWidth, size);
+      final lTail = _project(spec.dist + spec.tailDist + 0.25, -spec.tailHalf, size);
+      final rTail = _project(spec.dist + spec.tailDist + 0.25,  spec.tailHalf, size);
+
+      final chevPath = Path()
+        ..moveTo(tip.dx, tip.dy)
+        ..lineTo(lWing.dx, lWing.dy)
+        ..lineTo(lTail.dx, lTail.dy)
+        ..lineTo(tip.dx, tip.dy)
+        ..lineTo(rTail.dx, rTail.dy)
+        ..lineTo(rWing.dx, rWing.dy)
+        ..close();
+
+      canvas.drawPath(
+        chevPath,
+        Paint()
+          ..color = primaryColor.withValues(alpha: spec.alpha * 0.75)
+          ..style = PaintingStyle.fill,
+      );
+      canvas.drawPath(
+        chevPath,
+        Paint()
+          ..color = primaryColor.withValues(alpha: spec.alpha)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+      );
+    }
   }
+
 
   // ─── Horizon Glow ─────────────────────────────────────────────────────────
 

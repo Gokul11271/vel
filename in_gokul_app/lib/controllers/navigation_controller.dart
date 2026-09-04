@@ -6,6 +6,7 @@ import '../models/node.dart';
 import '../models/pose.dart';
 import '../models/navigation_state.dart';
 import '../algorithms/dijkstra.dart';
+import '../algorithms/map_matcher.dart';
 import '../services/world_alignment_service.dart';
 import '../tracking/position_provider.dart';
 import '../tracking/native_ar_position_provider.dart';
@@ -36,6 +37,11 @@ class NavigationController extends ChangeNotifier {
   NavigationState _state = NavigationState.initializing;
   Pose _latestPose = Pose.identity();
   StreamSubscription<Pose>? _poseSubscription;
+
+  /// Snapped position from map-matching (JSON coordinate space).
+  /// Updated every pose tick; used for distance / off-route logic.
+  Vector3 _snappedJsonPosition = Vector3.zero();
+  bool _hasSnappedOnce = false;
 
   /// Optional graph for re-routing. Set after construction if you want
   /// off-route Dijkstra recalculation.
@@ -89,6 +95,22 @@ class NavigationController extends ChangeNotifier {
 
   Node? get finalDestination => path.isNotEmpty ? path.last : null;
 
+  /// Snapped position in AR World coordinates.
+  Vector3 get snappedWorldPosition {
+    if (!_hasSnappedOnce || startNode == null) {
+      return _latestPose.position;
+    }
+    return alignmentService.transformJsonToWorld(
+      Node(
+        id: -1,
+        name: '_snapped',
+        x: _snappedJsonPosition.x,
+        y: _snappedJsonPosition.y,
+        z: _snappedJsonPosition.z,
+      ),
+    );
+  }
+
   /// 3D distance from current AR position to next waypoint.
   double get distanceToNextTarget {
     final target = nextTargetNode;
@@ -129,6 +151,18 @@ class NavigationController extends ChangeNotifier {
   void _onPoseReceived(Pose pose) {
     _latestPose = pose;
 
+    // ── Map matching: snap raw position to nearest graph edge ──────────────
+    if (graph != null) {
+      final rawJsonPos = alignmentService.transformWorldToJson(pose.position);
+      final matchResult = MapMatcher.project(rawJsonPos, graph!);
+      if (matchResult != null) {
+        _snappedJsonPosition = matchResult.snappedPosition;
+        _hasSnappedOnce = true;
+      } else if (!_hasSnappedOnce) {
+        _snappedJsonPosition = rawJsonPos;
+      }
+    }
+
     // Tracking state changes
     if (pose.trackingState == TrackingState.lost) {
       if (_state == NavigationState.navigating) {
@@ -160,8 +194,10 @@ class NavigationController extends ChangeNotifier {
   void _checkDirectDestination() {
     if (path.isEmpty) return;
     final destination = path.last;
+    // Use snapped world position for more stable distance readings
+    final effectivePos = snappedWorldPosition;
     final destDist =
-        alignmentService.getDistanceToNode(_latestPose.position, destination);
+        alignmentService.getDistanceToNode(effectivePos, destination);
 
     if (destDist <= destinationArrivalThreshold) {
       _currentStepIndex = path.length - 1;
@@ -180,8 +216,8 @@ class NavigationController extends ChangeNotifier {
     final isLastLeg = _currentStepIndex == path.length - 2;
     final threshold =
         isLastLeg ? destinationArrivalThreshold : waypointArrivalThreshold;
-    final dist =
-        alignmentService.getDistanceToNode(_latestPose.position, target);
+    final effectivePos = snappedWorldPosition;
+    final dist = alignmentService.getDistanceToNode(effectivePos, target);
 
     if (dist <= threshold) {
       _currentStepIndex++;
@@ -204,11 +240,16 @@ class NavigationController extends ChangeNotifier {
 
   /// Detects if the user is drifting away from the planned route and
   /// triggers a Dijkstra recalculation from the nearest graph node.
+  /// Uses map-matched perpendicular distance for stability — so walking
+  /// 0.4 m off the mapped corridor won't trigger false re-routes.
   void _checkOffRoute() {
     final target = nextTargetNode;
     if (target == null || graph == null) return;
 
-    final distToNext = distanceToNextTarget;
+    // Use snapped world-position distance to next waypoint
+    final effectivePos = snappedWorldPosition;
+    final distToNext =
+        alignmentService.getDistanceToNode(effectivePos, target);
 
     if (distToNext > _offRouteThresholdM) {
       _offRouteFrames++;
@@ -228,19 +269,13 @@ class NavigationController extends ChangeNotifier {
     if (g == null || path.isEmpty) return;
 
     final destination = path.last;
-    final currentJsonPos =
-        alignmentService.transformWorldToJson(_latestPose.position);
+    // Use the snapped position if available, otherwise fall back to raw pose.
+    final jsonPos = _hasSnappedOnce
+        ? _snappedJsonPosition
+        : alignmentService.transformWorldToJson(_latestPose.position);
 
-    // Find nearest graph node to current world position
-    Node? nearest;
-    double nearestDist = double.infinity;
-    for (final node in g.nodes.values) {
-      final d = (currentJsonPos - Vector3(node.x, node.y, node.z)).length;
-      if (d < nearestDist) {
-        nearestDist = d;
-        nearest = node;
-      }
-    }
+    // Find nearest graph node using MapMatcher helper.
+    final nearest = MapMatcher.nearestNode(jsonPos, g);
 
     if (nearest == null || nearest.id == destination.id) return;
 

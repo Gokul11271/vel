@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../services/graph_service.dart';
 import '../models/node.dart';
 import 'destination_screen.dart';
+import 'qr_scan_screen.dart';
+import 'mapper_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -24,8 +26,8 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void initState() {
     super.initState();
-    _fadeCtrl =
-        AnimationController(vsync: this, duration: const Duration(milliseconds: 700));
+    _fadeCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 700));
     _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
     _loadGraphData();
   }
@@ -63,7 +65,7 @@ class _HomeScreenState extends State<HomeScreen>
       backgroundColor: const Color(0xFF0A0D17),
       body: Stack(
         children: [
-          // Background subtle radial glow
+          // Background radial glow
           Positioned(
             top: -80,
             right: -60,
@@ -109,9 +111,9 @@ class _HomeScreenState extends State<HomeScreen>
             const Icon(Icons.error_outline_rounded,
                 size: 56, color: Colors.redAccent),
             const SizedBox(height: 16),
-            Text(
+            const Text(
               'Failed to load map data',
-              style: const TextStyle(
+              style: TextStyle(
                   color: Colors.white,
                   fontSize: 18,
                   fontWeight: FontWeight.bold),
@@ -186,21 +188,65 @@ class _HomeScreenState extends State<HomeScreen>
           ),
         ),
 
-        const SizedBox(height: 36),
+        const SizedBox(height: 28),
 
-        // ── Section label ────────────────────────────────────────────────────
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 24),
-          child: Text(
-            'WHERE ARE YOU?',
-            style: TextStyle(
-              color: Colors.white38,
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 2,
-            ),
+        // ── Primary Action Cards ─────────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(
+            children: [
+              // Card 1: Scan QR & Navigate
+              _ActionCard(
+                icon: Icons.qr_code_scanner_rounded,
+                color: Colors.cyanAccent,
+                title: '📷  Scan QR & Navigate',
+                subtitle: 'Scan the building entrance QR to start guided AR navigation',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const QrScanScreen()),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Card 2: Map a New Building
+              _ActionCard(
+                icon: Icons.map_rounded,
+                color: const Color(0xFFFF9E2C),
+                title: '🗺️  Map a New Building',
+                subtitle: 'Walk a path tapping nodes to create and save a building map',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const MapperScreen()),
+                ),
+              ),
+            ],
           ),
         ),
+
+        const SizedBox(height: 28),
+
+        // ── Section divider ──────────────────────────────────────────────────
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 24),
+          child: Row(
+            children: [
+              Expanded(child: Divider(color: Colors.white12)),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12),
+                child: Text(
+                  'OR PICK A START POINT',
+                  style: TextStyle(
+                    color: Colors.white24,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.5,
+                  ),
+                ),
+              ),
+              Expanded(child: Divider(color: Colors.white12)),
+            ],
+          ),
+        ),
+
         const SizedBox(height: 10),
 
         // ── Node tiles ───────────────────────────────────────────────────────
@@ -246,9 +292,7 @@ class _HomeScreenState extends State<HomeScreen>
                           child: Text(
                             '#${node.id}',
                             style: TextStyle(
-                              color: isSelected
-                                  ? Colors.black
-                                  : Colors.white54,
+                              color: isSelected ? Colors.black : Colors.white54,
                               fontWeight: FontWeight.bold,
                               fontSize: 12,
                             ),
@@ -322,6 +366,100 @@ class _HomeScreenState extends State<HomeScreen>
           ),
         ),
       ],
+    );
+  }
+}
+
+// ── Reusable Action Card ──────────────────────────────────────────────────────
+
+class _ActionCard extends StatefulWidget {
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _ActionCard({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  State<_ActionCard> createState() => _ActionCardState();
+}
+
+class _ActionCardState extends State<_ActionCard> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) {
+        setState(() => _pressed = false);
+        widget.onTap();
+      },
+      onTapCancel: () => setState(() => _pressed = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        transform: Matrix4.diagonal3Values(
+            _pressed ? 0.97 : 1.0, _pressed ? 0.97 : 1.0, 1.0),
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: widget.color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: widget.color.withValues(alpha: _pressed ? 0.7 : 0.3),
+            width: 1.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: widget.color.withValues(alpha: _pressed ? 0.12 : 0.05),
+              blurRadius: 20,
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: widget.color.withValues(alpha: 0.15),
+                border: Border.all(color: widget.color.withValues(alpha: 0.5)),
+              ),
+              child: Icon(widget.icon, color: widget.color, size: 24),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    widget.subtitle,
+                    style: const TextStyle(color: Colors.white38, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded,
+                color: widget.color.withValues(alpha: 0.6), size: 22),
+          ],
+        ),
+      ),
     );
   }
 }

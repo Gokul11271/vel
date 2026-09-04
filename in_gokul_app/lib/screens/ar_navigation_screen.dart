@@ -12,6 +12,7 @@ import '../services/camera_service.dart';
 import '../tracking/native_ar_position_provider.dart';
 import '../widgets/debug_overlay.dart';
 import '../widgets/fps_counter.dart';
+import '../widgets/waypoint_marker.dart';
 import 'success_screen.dart';
 
 class ArNavigationScreen extends StatefulWidget {
@@ -547,7 +548,80 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
                 ),
               ),
 
-              // ── 8. Debug Overlay ──────────────────────────────────────────
+              // ── 8. Waypoint Marker (shown within 8 m of next node) ────────
+              if (nextNode != null &&
+                  widget.controller.state != NavigationState.destinationReached)
+                Positioned(
+                  top: size.height * 0.52,
+                  left: 0,
+                  right: 0,
+                  child: WaypointMarker(
+                    nodeName: nextNode.name,
+                    distanceToNode: distNext,
+                    waypointReached:
+                        widget.controller.state == NavigationState.waypointReached,
+                  ),
+                ),
+
+              // ── 9. Destination Glow (within 5 m of final destination) ─────
+              if (widget.controller.finalDestination != null &&
+                  distTotal <= 5.0 &&
+                  widget.controller.state != NavigationState.destinationReached)
+                AnimatedBuilder(
+                  animation: _pulseController,
+                  builder: (ctx, _) {
+                    final pulse = _pulseController.value;
+                    return Center(
+                      child: Opacity(
+                        opacity: 0.6 + pulse * 0.4,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 90 + pulse * 20,
+                              height: 90 + pulse * 20,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Colors.greenAccent
+                                    .withValues(alpha: 0.08 + pulse * 0.10),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.greenAccent
+                                        .withValues(alpha: 0.3 + pulse * 0.2),
+                                    blurRadius: 40 + pulse * 20,
+                                    spreadRadius: 4,
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(
+                                Icons.place_rounded,
+                                color: Colors.greenAccent,
+                                size: 48,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              '🎉  ${widget.targetNode.name}',
+                              style: TextStyle(
+                                color: Colors.greenAccent
+                                    .withValues(alpha: 0.8 + pulse * 0.2),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 18,
+                              ),
+                            ),
+                            Text(
+                              '${distTotal.toStringAsFixed(1)} m away',
+                              style: const TextStyle(
+                                  color: Colors.white54, fontSize: 13),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+
+              // ── 10. Debug Overlay ─────────────────────────────────────────
               if (_showDebug)
                 DebugOverlay(
                   trackingState: trackingState,
