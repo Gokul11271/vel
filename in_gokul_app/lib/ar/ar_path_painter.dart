@@ -1,33 +1,31 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 
-/// Paints a perspective-projected AR floor navigation path on the camera feed.
+/// Paints a high-visibility perspective-projected AR floor navigation path.
 ///
-/// Simulates a path anchored to the physical floor using a pinhole camera
-/// perspective model. No ARCore/ARKit required — looks like real AR because
-/// objects converge to a vanishing point proportional to distance.
-///
-/// Coordinate convention:
-///   - [relativeBearing]: 0 = straight ahead, negative = left, positive = right
-///   - All distances in meters.
+/// Features:
+///   1. Electric illuminated floor ribbon (lane) with neon edge rails.
+///   2. Forward-pointing chevrons (▲) projected along the ground plane towards the destination.
+///   3. Center guide track with glowing milestone markers.
+///   4. Projected floor bullseye landing pad at the target waypoint.
 class ARPathPainter extends CustomPainter {
-  final double relativeBearing; // -pi to pi
-  final double distanceToNext; // meters
+  final double relativeBearing; // -pi to pi (0 = straight ahead)
+  final double distanceToNext;  // meters
   final bool isFacingTarget;
-  final bool isTurningAround; // |bearing| > 140°
+  final bool isTurningAround;  // |bearing| > 130°
   final Color primaryColor;
 
-  /// Fraction from top where the floor horizon appears (camera tilt model).
-  static const double _horizonFrac = 0.42;
+  /// Horizon line position (fraction from top of screen).
+  static const double _horizonFrac = 0.40;
 
-  /// Fraction from top where "near floor" (at user's feet) appears.
-  static const double _nearFrac = 0.95;
+  /// Near floor position at user's feet (fraction from top of screen).
+  static const double _nearFrac = 0.94;
 
-  /// Minimum distance for perspective (avoid div-by-zero).
-  static const double _minDist = 0.25;
+  /// Minimum distance in meters for perspective projection.
+  static const double _minDist = 0.30;
 
-  /// Physical half-width of the navigation lane in meters.
-  static const double _laneHalfM = 0.55;
+  /// Physical half-width of the floor ribbon in meters.
+  static const double _laneHalfM = 0.50;
 
   const ARPathPainter({
     required this.relativeBearing,
@@ -39,20 +37,22 @@ class ARPathPainter extends CustomPainter {
 
   // ─── Perspective Projection ────────────────────────────────────────────────
 
-  /// Projects a real-world floor point (dist meters ahead, lateralM meters sideways)
-  /// into screen coordinates using 1/d perspective.
-  Offset _project(double dist, double lateralM, Size size) {
-    final d = max(dist, _minDist);
-    final p = _minDist / d; // perspective factor: 1.0 when very close, → 0 when far
+  /// Projects a floor coordinate (distM ahead, lateralM sideways) to screen pixels.
+  Offset _project(double distM, double lateralM, Size size) {
+    final d = max(distM, _minDist);
+    // Perspective factor: 1.0 near feet, smoothly converges to 0 at infinity
+    final p = _minDist / d;
 
-    // Vanishing point: offset slightly in bearing direction
-    final vpX = size.width * 0.5 + sin(relativeBearing) * size.width * 0.28;
+    // Vanishing point on horizon influenced by relative bearing
+    final vpX = size.width * 0.5 + sin(relativeBearing) * size.width * 0.32;
     final vpY = size.height * _horizonFrac;
     final nearY = size.height * _nearFrac;
 
+    // Floor Y position (screen height)
     final screenY = vpY + (nearY - vpY) * p;
-    // Horizontal: the vanishing point offset + lateral spread that narrows with distance
-    final screenX = vpX + lateralM * size.width * 0.40 * p;
+
+    // Floor X position (screen width) with perspective foreshortening
+    final screenX = vpX + lateralM * size.width * 0.45 * p;
 
     return Offset(screenX, screenY);
   }
@@ -66,187 +66,247 @@ class ARPathPainter extends CustomPainter {
       return;
     }
 
-    _drawPathLane(canvas, size);
-    _drawProgressDots(canvas, size);
-    _drawFloorChevron(canvas, size);
-    _drawHorizonGlow(canvas, size);
+    _drawFloorRibbon(canvas, size);
+    _drawCenterTrack(canvas, size);
+    _drawForwardChevrons(canvas, size);
+    _drawWaypointFloorTarget(canvas, size);
+    _drawHorizonBloom(canvas, size);
   }
 
-  // ─── Path Lane ─────────────────────────────────────────────────────────────
+  // ─── 1. Illuminated Floor Ribbon (Ground Lane) ─────────────────────────────
 
-  void _drawPathLane(Canvas canvas, Size size) {
-    const numSeg = 20;
-    const maxD = 10.0;
+  void _drawFloorRibbon(Canvas canvas, Size size) {
+    const numSeg = 24;
+    final maxD = max(distanceToNext + 1.5, 8.0).clamp(4.0, 14.0);
 
-    final leftEdge = <Offset>[];
-    final rightEdge = <Offset>[];
+    final leftRail = <Offset>[];
+    final rightRail = <Offset>[];
 
     for (int i = 0; i <= numSeg; i++) {
       final t = i / numSeg;
-      // Quadratic spacing: denser near camera (better perspective look)
+      // Quadratic distance distribution (denser near camera)
       final d = _minDist + (maxD - _minDist) * (t * t);
-      leftEdge.add(_project(d, -_laneHalfM, size));
-      rightEdge.add(_project(d, _laneHalfM, size));
+      leftRail.add(_project(d, -_laneHalfM, size));
+      rightRail.add(_project(d, _laneHalfM, size));
     }
 
-    // ── Filled gradient polygon ──
-    final lanePoly = Path()
-      ..moveTo(leftEdge.first.dx, leftEdge.first.dy);
-    for (final pt in leftEdge) { lanePoly.lineTo(pt.dx, pt.dy); }
-    for (final pt in rightEdge.reversed) { lanePoly.lineTo(pt.dx, pt.dy); }
-    lanePoly.close();
+    // ── Ribbon Surface Fill ──
+    final ribbonPath = Path()..moveTo(leftRail.first.dx, leftRail.first.dy);
+    for (final pt in leftRail) {
+      ribbonPath.lineTo(pt.dx, pt.dy);
+    }
+    for (final pt in rightRail.reversed) {
+      ribbonPath.lineTo(pt.dx, pt.dy);
+    }
+    ribbonPath.close();
 
-    final gradRect = Rect.fromLTWH(
+    final fillGradient = LinearGradient(
+      colors: [
+        primaryColor.withValues(alpha: 0.45),
+        primaryColor.withValues(alpha: 0.18),
+        primaryColor.withValues(alpha: 0.04),
+      ],
+      stops: const [0.0, 0.45, 1.0],
+      begin: Alignment.bottomCenter,
+      end: Alignment.topCenter,
+    );
+
+    final bounds = Rect.fromLTWH(
       0,
       size.height * _horizonFrac,
       size.width,
       size.height * (_nearFrac - _horizonFrac),
     );
+
     canvas.drawPath(
-      lanePoly,
-      Paint()
-        ..shader = LinearGradient(
-          colors: [
-            primaryColor.withValues(alpha: 0.30),
-            primaryColor.withValues(alpha: 0.03),
-          ],
-          begin: Alignment.bottomCenter,
-          end: Alignment.topCenter,
-        ).createShader(gradRect),
+      ribbonPath,
+      Paint()..shader = fillGradient.createShader(bounds),
     );
 
-    // ── Glowing edges ──
-    final edgePaint = Paint()
-      ..color = primaryColor.withValues(alpha: 0.60)
-      ..strokeWidth = 2.0
+    // ── Glowing Side Boundary Rails ──
+    final outerRailGlow = Paint()
+      ..color = primaryColor.withValues(alpha: 0.50)
+      ..strokeWidth = 5.0
       ..style = PaintingStyle.stroke
       ..strokeJoin = StrokeJoin.round
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
 
-    _polyline(canvas, leftEdge, edgePaint);
-    _polyline(canvas, rightEdge, edgePaint);
+    final innerRailCore = Paint()
+      ..color = Colors.white.withValues(alpha: 0.85)
+      ..strokeWidth = 2.2
+      ..style = PaintingStyle.stroke
+      ..strokeJoin = StrokeJoin.round;
 
-    // ── Center dashed line ──
-    _drawDashedCenterLine(canvas, size);
+    _polyline(canvas, leftRail, outerRailGlow);
+    _polyline(canvas, rightRail, outerRailGlow);
+    _polyline(canvas, leftRail, innerRailCore);
+    _polyline(canvas, rightRail, innerRailCore);
   }
 
-  void _drawDashedCenterLine(Canvas canvas, Size size) {
-    const dashDists = [0.5, 1.2, 2.0, 3.0, 4.5, 6.5];
-    final dashPaint = Paint()
-      ..color = primaryColor.withValues(alpha: 0.25)
-      ..strokeWidth = 1.5
-      ..style = PaintingStyle.stroke;
+  // ─── 2. Center Guide Track & Milestone Dots ────────────────────────────────
 
-    for (int i = 0; i < dashDists.length - 1; i += 2) {
-      final a = _project(dashDists[i], 0, size);
-      final b = _project(dashDists[i + 1], 0, size);
-      canvas.drawLine(a, b, dashPaint);
-    }
-  }
-
-  // ─── Progress Dots ────────────────────────────────────────────────────────
-
-  void _drawProgressDots(Canvas canvas, Size size) {
-    const distances = [1.0, 2.5, 4.5, 7.0];
-
-    for (final d in distances) {
-      if (d > distanceToNext + 1) continue; // don't show dots past target
-      final pos = _project(d, 0, size);
-      final radius = (7.0 * _minDist / max(d, _minDist)).clamp(2.0, 9.0);
-
-      // Outer glow
-      canvas.drawCircle(
-        pos,
-        radius * 2.5,
-        Paint()
-          ..color = primaryColor.withValues(alpha: 0.12)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
-      );
-      // Solid dot
-      canvas.drawCircle(
-        pos,
-        radius,
-        Paint()..color = primaryColor.withValues(alpha: 0.85),
-      );
-    }
-  }
-
-  // ─── Floor Chevron Arrows (multiple, every 1 m) ──────────────────────────
-
-  /// Draws chevron arrows on the floor at 1 m, 2 m, 3 m, and 4 m.
-  /// Each subsequent arrow is smaller and more transparent, conveying depth.
-  ///
-  ///  ▶  1 m — 40 px, 100 % opacity
-  ///  ▶  2 m — 30 px,  80 % opacity
-  ///  ▶  3 m — 22 px,  55 % opacity
-  ///  ▶  4 m — 16 px,  30 % opacity
-  void _drawFloorChevron(Canvas canvas, Size size) {
-    const arrowSpecs = [
-      (dist: 1.0, halfWidth: 0.42, tailDist: 0.50, tailHalf: 0.22, alpha: 1.00),
-      (dist: 2.0, halfWidth: 0.35, tailDist: 0.42, tailHalf: 0.18, alpha: 0.80),
-      (dist: 3.0, halfWidth: 0.27, tailDist: 0.34, tailHalf: 0.14, alpha: 0.55),
-      (dist: 4.0, halfWidth: 0.20, tailDist: 0.26, tailHalf: 0.10, alpha: 0.30),
+  void _drawCenterTrack(Canvas canvas, Size size) {
+    const dashIntervals = [
+      (0.5, 1.0),
+      (1.4, 2.0),
+      (2.5, 3.2),
+      (3.8, 4.6),
+      (5.4, 6.4),
+      (7.2, 8.4),
     ];
 
-    for (final spec in arrowSpecs) {
-      if (spec.dist > distanceToNext + 0.5) break; // don't draw past the target
+    final dashPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.60)
+      ..strokeWidth = 2.0
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
 
-      final tip   = _project(spec.dist, 0, size);
-      final lWing = _project(spec.dist + spec.tailDist, -spec.halfWidth, size);
-      final rWing = _project(spec.dist + spec.tailDist,  spec.halfWidth, size);
-      final lTail = _project(spec.dist + spec.tailDist + 0.25, -spec.tailHalf, size);
-      final rTail = _project(spec.dist + spec.tailDist + 0.25,  spec.tailHalf, size);
+    for (final seg in dashIntervals) {
+      if (seg.$1 > distanceToNext + 1.0) break;
+      final p1 = _project(seg.$1, 0, size);
+      final p2 = _project(min(seg.$2, distanceToNext), 0, size);
+      canvas.drawLine(p1, p2, dashPaint);
+    }
+  }
+
+  // ─── 3. Forward Chevrons (Pointing INTO the Corridor) ──────────────────────
+
+  void _drawForwardChevrons(Canvas canvas, Size size) {
+    // Chevron positions spaced along the floor ahead
+    const chevronDistances = [0.8, 1.8, 3.0, 4.4, 6.0, 8.0];
+
+    for (int i = 0; i < chevronDistances.length; i++) {
+      final baseD = chevronDistances[i];
+      if (baseD > distanceToNext) break; // Stop before destination
+
+      // Perspective scaling: chevrons get smaller as distance increases
+      final length = (0.50 * (_minDist / max(baseD, _minDist))).clamp(0.25, 0.55);
+      final halfW  = (0.42 * (_minDist / max(baseD, _minDist))).clamp(0.20, 0.44);
+      final alpha  = (1.0 - (i * 0.14)).clamp(0.25, 1.0);
+
+      // FORWARD POINTING:
+      // Tip is FURTHEST away (higher screen Y, larger dist)
+      // Wings are CLOSER to user (lower screen Y, smaller dist)
+      final tipD   = baseD + length;
+      final wingD  = baseD;
+      final notchD = baseD + length * 0.35;
+
+      final tip   = _project(tipD, 0, size);
+      final lWing = _project(wingD, -halfW, size);
+      final rWing = _project(wingD, halfW, size);
+      final notch = _project(notchD, 0, size);
 
       final chevPath = Path()
         ..moveTo(tip.dx, tip.dy)
         ..lineTo(lWing.dx, lWing.dy)
-        ..lineTo(lTail.dx, lTail.dy)
-        ..lineTo(tip.dx, tip.dy)
-        ..lineTo(rTail.dx, rTail.dy)
+        ..lineTo(notch.dx, notch.dy)
         ..lineTo(rWing.dx, rWing.dy)
         ..close();
 
+      // Neon blur shadow
       canvas.drawPath(
         chevPath,
         Paint()
-          ..color = primaryColor.withValues(alpha: spec.alpha * 0.75)
+          ..color = primaryColor.withValues(alpha: alpha * 0.70)
+          ..style = PaintingStyle.fill
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+      );
+
+      // Solid vibrant fill
+      canvas.drawPath(
+        chevPath,
+        Paint()
+          ..color = primaryColor.withValues(alpha: alpha * 0.90)
           ..style = PaintingStyle.fill,
       );
+
+      // Bright white accent border
       canvas.drawPath(
         chevPath,
         Paint()
-          ..color = primaryColor.withValues(alpha: spec.alpha)
+          ..color = Colors.white.withValues(alpha: alpha * 0.85)
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.5
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+          ..strokeWidth = 1.5,
       );
     }
   }
 
+  // ─── 4. Projected Floor Waypoint Landing Target ────────────────────────────
 
-  // ─── Horizon Glow ─────────────────────────────────────────────────────────
+  void _drawWaypointFloorTarget(Canvas canvas, Size size) {
+    if (distanceToNext > 12.0) return;
 
-  void _drawHorizonGlow(Canvas canvas, Size size) {
-    // Subtle bloom at the vanishing point
-    final vpX = size.width * 0.5 + sin(relativeBearing) * size.width * 0.28;
+    final targetCenter = _project(distanceToNext, 0, size);
+    final targetL = _project(distanceToNext, -0.65, size);
+    final targetR = _project(distanceToNext, 0.65, size);
+    final radiusX = (targetR.dx - targetL.dx).abs() * 0.5;
+    final radiusY = max(radiusX * 0.35, 4.0); // Foreshortened floor ellipse
+
+    final targetRect = Rect.fromCenter(
+      center: targetCenter,
+      width: radiusX * 2,
+      height: radiusY * 2,
+    );
+
+    // Outer Target Pulse Ring
+    canvas.drawOval(
+      targetRect,
+      Paint()
+        ..color = primaryColor.withValues(alpha: 0.35)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.0
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+    );
+
+    canvas.drawOval(
+      targetRect,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0,
+    );
+
+    // Inner Bullseye Fill
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: targetCenter,
+        width: radiusX * 0.8,
+        height: radiusY * 0.8,
+      ),
+      Paint()
+        ..color = primaryColor.withValues(alpha: 0.55)
+        ..style = PaintingStyle.fill,
+    );
+
+    // Center Landing Pin
+    canvas.drawCircle(
+      targetCenter,
+      (4.0 * _minDist / max(distanceToNext, _minDist)).clamp(2.5, 6.0),
+      Paint()..color = Colors.white,
+    );
+  }
+
+  // ─── 5. Horizon Bloom Glow ────────────────────────────────────────────────
+
+  void _drawHorizonBloom(Canvas canvas, Size size) {
+    final vpX = size.width * 0.5 + sin(relativeBearing) * size.width * 0.32;
     final vpY = size.height * _horizonFrac;
 
     canvas.drawCircle(
       Offset(vpX, vpY),
-      60,
+      80,
       Paint()
-        ..color = primaryColor.withValues(alpha: 0.06)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 30),
+        ..color = primaryColor.withValues(alpha: 0.12)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 35),
     );
   }
 
-  // ─── Turn-Around Indicator ────────────────────────────────────────────────
+  // ─── 6. Turn-Around Indicator ─────────────────────────────────────────────
 
   void _drawTurnAroundIndicator(Canvas canvas, Size size) {
-    final cx = size.width / 2;
-    final cy = size.height * 0.55;
+    final cx = size.width * 0.5;
+    final cy = size.height * 0.52;
 
-    // Pulsing ring
     canvas.drawCircle(
       Offset(cx, cy),
       70,
@@ -255,52 +315,60 @@ class ARPathPainter extends CustomPainter {
         ..style = PaintingStyle.fill
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20),
     );
+
     canvas.drawCircle(
       Offset(cx, cy),
       68,
       Paint()
-        ..color = Colors.amberAccent.withValues(alpha: 0.4)
+        ..color = Colors.amberAccent.withValues(alpha: 0.7)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2.5,
     );
 
-    // U-turn arrows (simplified)
     final arrowPaint = Paint()
       ..color = Colors.amberAccent
-      ..strokeWidth = 3
+      ..strokeWidth = 3.5
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
 
-    final path = Path();
-    path.moveTo(cx - 20, cy + 20);
-    path.lineTo(cx - 20, cy - 10);
-    path.arcToPoint(Offset(cx + 20, cy - 10),
-        radius: const Radius.circular(20), clockwise: true);
-    path.lineTo(cx + 20, cy + 20);
+    final path = Path()
+      ..moveTo(cx - 22, cy + 22)
+      ..lineTo(cx - 22, cy - 10)
+      ..arcToPoint(
+        Offset(cx + 22, cy - 10),
+        radius: const Radius.circular(22),
+        clockwise: true,
+      )
+      ..lineTo(cx + 22, cy + 22);
 
     canvas.drawPath(path, arrowPaint);
 
-    // Arrowhead
     canvas.drawLine(
-        Offset(cx + 12, cy + 10), Offset(cx + 20, cy + 20), arrowPaint);
+      Offset(cx + 12, cy + 12),
+      Offset(cx + 22, cy + 22),
+      arrowPaint,
+    );
     canvas.drawLine(
-        Offset(cx + 28, cy + 10), Offset(cx + 20, cy + 20), arrowPaint);
+      Offset(cx + 32, cy + 12),
+      Offset(cx + 22, cy + 22),
+      arrowPaint,
+    );
   }
-
-  // ─── Helpers ──────────────────────────────────────────────────────────────
 
   void _polyline(Canvas canvas, List<Offset> pts, Paint paint) {
     if (pts.length < 2) return;
     final path = Path()..moveTo(pts.first.dx, pts.first.dy);
-    for (final p in pts.skip(1)) { path.lineTo(p.dx, p.dy); }
+    for (final p in pts.skip(1)) {
+      path.lineTo(p.dx, p.dy);
+    }
     canvas.drawPath(path, paint);
   }
 
   @override
-  bool shouldRepaint(ARPathPainter old) =>
-      old.relativeBearing != relativeBearing ||
-      old.distanceToNext != distanceToNext ||
-      old.isFacingTarget != isFacingTarget ||
-      old.isTurningAround != isTurningAround ||
-      old.primaryColor != primaryColor;
+  bool shouldRepaint(ARPathPainter oldDelegate) =>
+      oldDelegate.relativeBearing != relativeBearing ||
+      oldDelegate.distanceToNext != distanceToNext ||
+      oldDelegate.isFacingTarget != isFacingTarget ||
+      oldDelegate.isTurningAround != isTurningAround ||
+      oldDelegate.primaryColor != primaryColor;
 }

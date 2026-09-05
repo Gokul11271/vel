@@ -55,8 +55,8 @@ class NavigationController extends ChangeNotifier {
     required DijkstraResult routeResult,
     required this.positionProvider,
     required this.alignmentService,
-    this.waypointArrivalThreshold = 2.0,  // 2.0m for intermediate waypoints
-    this.destinationArrivalThreshold = 3.0, // 3.0m for final destination
+    this.waypointArrivalThreshold = 1.2,  // 1.2m for intermediate waypoints
+    this.destinationArrivalThreshold = 1.2, // 1.2m for final destination
     this.graph,
     this.onRouteRecalculated,
   }) : path = List.from(routeResult.path) {
@@ -192,7 +192,13 @@ class NavigationController extends ChangeNotifier {
   /// step we're on. This fixes the issue where the user arrives at the
   /// destination but hasn't passed all intermediate nodes.
   void _checkDirectDestination() {
-    if (path.isEmpty) return;
+    if (path.isEmpty || _state == NavigationState.destinationReached) return;
+    
+    // For multi-step paths, avoid premature destination trigger at the starting point
+    if (path.length > 2 && _currentStepIndex == 0) {
+      return;
+    }
+
     final destination = path.last;
     // Use snapped world position for more stable distance readings
     final effectivePos = snappedWorldPosition;

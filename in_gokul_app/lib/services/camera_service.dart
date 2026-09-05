@@ -51,7 +51,6 @@ class CameraService {
         backCamera,
         ResolutionPreset.high,
         enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.jpeg,
       );
 
       await _controller!.initialize();

@@ -25,18 +25,15 @@ class NativeArPositionProvider implements PositionProvider {
   bool _isTracking = false;
   DateTime _lastStepTime = DateTime.now();
 
-  // --- Low-pass filter state for accelerometer ---
-  double _lpfX = 0.0, _lpfY = 0.0, _lpfZ = 0.0;
-  static const double _lpfAlpha = 0.12; // smoothing factor (0 = max smooth)
-
-  // --- Pitch estimation from accelerometer ---
+  // --- Pitch & dynamic acceleration state ---
   double _pitchRadians = 0.0;
+  double _filteredMag = 0.0;
 
   // --- Step detection hysteresis ---
   bool _stepPeak = false;
-  static const double _stepThresholdHigh = 1.20;
-  static const double _stepThresholdLow = 0.60;
-  static const int _stepMinIntervalMs = 280;
+  static const double _stepThresholdHigh = 0.48; // Peak acceleration when foot strikes (m/s²)
+  static const double _stepThresholdLow = 0.20;  // Reset threshold (m/s²)
+  static const int _stepMinIntervalMs = 240;     // Min time between steps (~4 steps/sec max)
 
   int _totalSteps = 0;
   int get totalSteps => _totalSteps;
@@ -88,37 +85,35 @@ class NativeArPositionProvider implements PositionProvider {
 
   void _initStepDetection() {
     try {
+      // 1. User linear acceleration (gravity already removed by OS sensor fusion)
       _accelSubscription = userAccelerometerEventStream().listen(
         (UserAccelerometerEvent event) {
-          // --- Low-pass filter (gravity component) ---
-          _lpfX = _lpfAlpha * event.x + (1 - _lpfAlpha) * _lpfX;
-          _lpfY = _lpfAlpha * event.y + (1 - _lpfAlpha) * _lpfY;
-          _lpfZ = _lpfAlpha * event.z + (1 - _lpfAlpha) * _lpfZ;
+          final rawMag = sqrt(event.x * event.x + event.y * event.y + event.z * event.z);
+          // Exponential moving average for smooth peak detection
+          _filteredMag = 0.35 * rawMag + 0.65 * _filteredMag;
 
-          // --- Pitch estimation from gravity vector ---
-          // pitch = atan2(-gx, sqrt(gy^2 + gz^2))
-          final gMag = sqrt(_lpfX * _lpfX + _lpfY * _lpfY + _lpfZ * _lpfZ);
-          if (gMag > 0.1) {
-            _pitchRadians = asin((_lpfY / gMag).clamp(-1.0, 1.0));
-          }
-
-          // --- High-pass (dynamic) component = raw - gravity ---
-          final dynX = event.x - _lpfX;
-          final dynY = event.y - _lpfY;
-          final dynZ = event.z - _lpfZ;
-          final dynMag = sqrt(dynX * dynX + dynY * dynY + dynZ * dynZ);
-
-          // --- Hysteresis peak detector ---
+          // Hysteresis peak detector
           final now = DateTime.now();
           if (!_stepPeak &&
-              dynMag > _stepThresholdHigh &&
+              _filteredMag > _stepThresholdHigh &&
               now.difference(_lastStepTime).inMilliseconds > _stepMinIntervalMs) {
             _stepPeak = true;
             _lastStepTime = now;
             _totalSteps++;
-            stepForward(0.65); // 65 cm stride length
-          } else if (_stepPeak && dynMag < _stepThresholdLow) {
-            _stepPeak = false; // reset for next step
+            stepForward(0.65); // 65 cm per step
+          } else if (_stepPeak && _filteredMag < _stepThresholdLow) {
+            _stepPeak = false; // Reset for next footfall
+          }
+        },
+        onError: (_) {},
+      );
+
+      // 2. Raw accelerometer to estimate device pitch (tilt) from gravity
+      accelerometerEventStream().listen(
+        (AccelerometerEvent event) {
+          final gMag = sqrt(event.x * event.x + event.y * event.y + event.z * event.z);
+          if (gMag > 1.0) {
+            _pitchRadians = asin((event.y / gMag).clamp(-1.0, 1.0));
           }
         },
         onError: (_) {},
