@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/graph_service.dart';
 import '../models/node.dart';
 import '../theme/app_theme.dart';
+import '../widgets/qr_export_dialog.dart';
 import 'destination_screen.dart';
 import 'qr_scan_screen.dart';
 import 'mapper_screen.dart';
@@ -236,6 +237,22 @@ class _HomeScreenState extends State<HomeScreen>
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => const MapperScreen()),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Card 3: Generate Entrance QR
+              _ActionCard(
+                icon: Icons.qr_code_2_rounded,
+                cardBg: AppColors.creamSurface,
+                accentColor: const Color(0xFF059669), // Emerald accent
+                iconBg: const Color(0xFFECFDF5),
+                title: 'Export Entrance QR Code',
+                subtitle: 'Generate, share, or print the entrance QR code for visitors',
+                onTap: () => QrExportDialog.show(
+                  context,
+                  buildingId: 'building_01',
+                  buildingName: 'Main Building',
+                  entranceName: _destinations.isNotEmpty ? _destinations.first.name : '🚪 Entrance',
                 ),
               ),
             ],

@@ -7,6 +7,7 @@ import '../models/building_map.dart';
 import '../services/json_service.dart';
 import '../tracking/native_ar_position_provider.dart';
 import '../theme/app_theme.dart';
+import '../widgets/qr_export_dialog.dart';
 
 /// Mobile Mapper Screen
 /// Walk a corridor tapping "+" to drop nodes at your current position.
@@ -199,6 +200,13 @@ class _MapperScreenState extends State<MapperScreen>
             behavior: SnackBarBehavior.floating,
           ),
         );
+        // Automatically pop up Entrance QR dialog for printing/placement
+        QrExportDialog.show(
+          context,
+          buildingId: widget.buildingId,
+          buildingName: widget.buildingName,
+          entranceName: _nodes.first.name,
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -236,6 +244,17 @@ class _MapperScreenState extends State<MapperScreen>
           ],
         ),
         actions: [
+          if (_nodes.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.qr_code_2_rounded, color: AppColors.primaryBlue),
+              tooltip: 'Export Entrance QR Code',
+              onPressed: () => QrExportDialog.show(
+                context,
+                buildingId: widget.buildingId,
+                buildingName: widget.buildingName,
+                entranceName: _nodes.first.name,
+              ),
+            ),
           if (_nodes.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.undo_rounded, color: AppColors.textMuted),
