@@ -17,7 +17,10 @@ class NavigationController extends ChangeNotifier {
   final PositionProvider positionProvider;
   final WorldAlignmentService alignmentService;
 
-  // ── Arrival thresholds ──────────────────────────────────────────────────────
+  // ── Corridor & Arrival thresholds ──────────────────────────────────────────
+  /// Total width of the hallway/corridor in meters (half-width tolerance from centerline).
+  final double corridorWidthM;
+
   /// Distance to auto-advance past an intermediate waypoint (meters).
   final double waypointArrivalThreshold;
 
@@ -25,38 +28,43 @@ class NavigationController extends ChangeNotifier {
   final double destinationArrivalThreshold;
 
   // ── Off-route detection ─────────────────────────────────────────────────────
-  /// If the user's distance to the next waypoint exceeds this, consider off-route.
-  static const double _offRouteThresholdM = 4.5;
+  /// Maximum deviation beyond corridor bounds before considering off-route.
+  static const double _offRouteThresholdM = 3.5;
 
   /// Number of consecutive pose readings beyond threshold before recalculating.
-  static const int _offRouteFrameLimit = 20;
+  static const int _offRouteFrameLimit = 12;
   int _offRouteFrames = 0;
 
   // ── State ───────────────────────────────────────────────────────────────────
   int _currentStepIndex = 0;
   NavigationState _state = NavigationState.initializing;
+
+  /// Raw 6DOF sensor pose (used strictly for camera orientation & viewport rendering).
   Pose _latestPose = Pose.identity();
   StreamSubscription<Pose>? _poseSubscription;
 
   /// Snapped position from map-matching (JSON coordinate space).
-  /// Updated every pose tick; used for distance / off-route logic.
+  /// Used for distance / Dijkstra / waypoint logic.
   Vector3 _snappedJsonPosition = Vector3.zero();
   bool _hasSnappedOnce = false;
 
-  /// Optional graph for re-routing. Set after construction if you want
-  /// off-route Dijkstra recalculation.
+  /// Whether current user position is within acceptable corridor bounds.
+  bool _isInsideCorridor = true;
+  double _distanceToCorridorCenterline = 0.0;
+
+  /// Optional graph for re-routing. Set after construction or in constructor.
   Graph? graph;
 
   /// Fires when the controller auto-recalculates a new route.
-  /// The caller may update UI accordingly.
   VoidCallback? onRouteRecalculated;
 
   NavigationController({
     required DijkstraResult routeResult,
     required this.positionProvider,
     required this.alignmentService,
-    this.waypointArrivalThreshold = 1.2,  // 1.2m for intermediate waypoints
-    this.destinationArrivalThreshold = 1.2, // 1.2m for final destination
+    this.corridorWidthM = MapMatcher.defaultCorridorWidthM,
+    this.waypointArrivalThreshold = 1.2,
+    this.destinationArrivalThreshold = 1.2,
     this.graph,
     this.onRouteRecalculated,
   }) : path = List.from(routeResult.path) {
@@ -72,14 +80,31 @@ class NavigationController extends ChangeNotifier {
     _poseSubscription = positionProvider.poseStream.listen(_onPoseReceived);
   }
 
-  // ── Getters ─────────────────────────────────────────────────────────────────
+  // ── Getters: Decoupled Poses ────────────────────────────────────────────────
+
+  /// Raw sensor pose (for smooth camera matrices and viewport rotation).
+  Pose get rawPose => _latestPose;
+
+  /// Aliased for backward compatibility with existing HUD callers.
+  Pose get latestPose => _latestPose;
+
+  /// Corridor-snapped navigation pose (for waypoint progression & distance calculations).
+  Pose get navigationPose {
+    return Pose(
+      position: snappedWorldPosition,
+      rotation: _latestPose.rotation,
+      timestamp: _latestPose.timestamp,
+      trackingState: _latestPose.trackingState,
+    );
+  }
 
   NavigationState get state => _state;
   int get currentStepIndex => _currentStepIndex;
-  Pose get latestPose => _latestPose;
   TrackingState get trackingState => _latestPose.trackingState;
   bool get isFinished => _state == NavigationState.destinationReached;
   bool get isNavigating => _state == NavigationState.navigating;
+  bool get isInsideCorridor => _isInsideCorridor;
+  double get distanceToCorridorCenterline => _distanceToCorridorCenterline;
 
   Node? get startNode => path.isNotEmpty ? path.first : null;
 
@@ -115,7 +140,7 @@ class NavigationController extends ChangeNotifier {
   double get distanceToNextTarget {
     final target = nextTargetNode;
     if (target == null) return 0.0;
-    return alignmentService.getDistanceToNode(_latestPose.position, target);
+    return alignmentService.getDistanceToNode(snappedWorldPosition, target);
   }
 
   /// Total remaining distance across all path legs ahead.
@@ -151,16 +176,30 @@ class NavigationController extends ChangeNotifier {
   void _onPoseReceived(Pose pose) {
     _latestPose = pose;
 
-    // ── Map matching: snap raw position to nearest graph edge ──────────────
-    if (graph != null) {
-      final rawJsonPos = alignmentService.transformWorldToJson(pose.position);
-      final matchResult = MapMatcher.project(rawJsonPos, graph!);
-      if (matchResult != null) {
-        _snappedJsonPosition = matchResult.snappedPosition;
-        _hasSnappedOnce = true;
-      } else if (!_hasSnappedOnce) {
-        _snappedJsonPosition = rawJsonPos;
-      }
+    // ── Map matching: project raw position onto active path / graph ─────────
+    final rawJsonPos = alignmentService.transformWorldToJson(pose.position);
+
+    MapMatchResult? matchResult = MapMatcher.projectOntoPath(
+      rawJsonPos,
+      path,
+      corridorWidthM: corridorWidthM,
+    );
+
+    if (matchResult == null && graph != null) {
+      matchResult = MapMatcher.project(
+        rawJsonPos,
+        graph!,
+        corridorWidthM: corridorWidthM,
+      );
+    }
+
+    if (matchResult != null) {
+      _distanceToCorridorCenterline = matchResult.distanceToEdge;
+      _isInsideCorridor = matchResult.isWithinCorridor;
+      _snappedJsonPosition = matchResult.snappedPosition;
+      _hasSnappedOnce = true;
+    } else if (!_hasSnappedOnce) {
+      _snappedJsonPosition = rawJsonPos;
     }
 
     // Tracking state changes
@@ -181,7 +220,7 @@ class NavigationController extends ChangeNotifier {
       // 2. Check normal waypoint progression
       _checkWaypointProgression();
 
-      // 3. Off-route detection
+      // 3. Off-route detection and auto-reroute
       _checkOffRoute();
     }
 
@@ -189,18 +228,15 @@ class NavigationController extends ChangeNotifier {
   }
 
   /// Always check proximity to the final destination, regardless of which
-  /// step we're on. This fixes the issue where the user arrives at the
-  /// destination but hasn't passed all intermediate nodes.
+  /// step we're on.
   void _checkDirectDestination() {
     if (path.isEmpty || _state == NavigationState.destinationReached) return;
-    
-    // For multi-step paths, avoid premature destination trigger at the starting point
+
     if (path.length > 2 && _currentStepIndex == 0) {
       return;
     }
 
     final destination = path.last;
-    // Use snapped world position for more stable distance readings
     final effectivePos = snappedWorldPosition;
     final destDist =
         alignmentService.getDistanceToNode(effectivePos, destination);
@@ -227,7 +263,7 @@ class NavigationController extends ChangeNotifier {
 
     if (dist <= threshold) {
       _currentStepIndex++;
-      _offRouteFrames = 0; // reset off-route counter on progress
+      _offRouteFrames = 0;
 
       if (_currentStepIndex >= path.length - 1) {
         _state = NavigationState.destinationReached;
@@ -246,25 +282,23 @@ class NavigationController extends ChangeNotifier {
 
   /// Detects if the user is drifting away from the planned route and
   /// triggers a Dijkstra recalculation from the nearest graph node.
-  /// Uses map-matched perpendicular distance for stability — so walking
-  /// 0.4 m off the mapped corridor won't trigger false re-routes.
   void _checkOffRoute() {
     final target = nextTargetNode;
     if (target == null || graph == null) return;
 
-    // Use snapped world-position distance to next waypoint
     final effectivePos = snappedWorldPosition;
     final distToNext =
         alignmentService.getDistanceToNode(effectivePos, target);
 
-    if (distToNext > _offRouteThresholdM) {
+    // If user is outside the corridor beyond offRouteThresholdM
+    if (!_isInsideCorridor && _distanceToCorridorCenterline > _offRouteThresholdM && distToNext > _offRouteThresholdM) {
       _offRouteFrames++;
       if (_offRouteFrames >= _offRouteFrameLimit) {
         _offRouteFrames = 0;
         _recalculateRoute();
       }
     } else {
-      _offRouteFrames = 0;
+      if (_offRouteFrames > 0) _offRouteFrames--;
     }
   }
 
@@ -275,24 +309,20 @@ class NavigationController extends ChangeNotifier {
     if (g == null || path.isEmpty) return;
 
     final destination = path.last;
-    // Use the snapped position if available, otherwise fall back to raw pose.
-    final jsonPos = _hasSnappedOnce
-        ? _snappedJsonPosition
-        : alignmentService.transformWorldToJson(_latestPose.position);
+    // Always use actual raw physical position to determine where user currently is
+    final rawJsonPos = alignmentService.transformWorldToJson(_latestPose.position);
 
-    // Find nearest graph node using MapMatcher helper.
-    final nearest = MapMatcher.nearestNode(jsonPos, g);
+    final nearest = MapMatcher.nearestNode(rawJsonPos, g);
 
     if (nearest == null || nearest.id == destination.id) return;
 
-    final result =
-        Dijkstra.findShortestPath(g, nearest.id, destination.id);
+    final result = Dijkstra.findShortestPath(g, nearest.id, destination.id);
 
     if (result.path.isEmpty) return;
 
-    // Rebuild path: current step stays, replace remainder with new route
     path = List.from(result.path);
     _currentStepIndex = 0;
+    _offRouteFrames = 0;
     _state = NavigationState.navigating;
     notifyListeners();
     onRouteRecalculated?.call();

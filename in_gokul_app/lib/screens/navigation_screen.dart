@@ -8,12 +8,14 @@ class NavigationScreen extends StatelessWidget {
   final Node startNode;
   final Node targetNode;
   final DijkstraResult routeResult;
+  final double? initialHeadingDegrees;
 
   const NavigationScreen({
     super.key,
     required this.startNode,
     required this.targetNode,
     required this.routeResult,
+    this.initialHeadingDegrees,
   });
 
   @override
@@ -341,6 +343,7 @@ class NavigationScreen extends StatelessWidget {
                               startNode: startNode,
                               targetNode: targetNode,
                               routeResult: routeResult,
+                              initialHeadingDegrees: initialHeadingDegrees,
                             ),
                           ),
                         );

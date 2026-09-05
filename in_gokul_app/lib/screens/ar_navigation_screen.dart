@@ -9,6 +9,7 @@ import '../models/pose.dart';
 import '../models/node.dart';
 import '../ar/ar_manager.dart';
 import '../ar/ar_path_painter.dart';
+import '../ar/breadcrumb_painter.dart';
 import '../services/camera_service.dart';
 import '../tracking/native_ar_position_provider.dart';
 import '../theme/app_theme.dart';
@@ -65,8 +66,16 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
     );
 
     widget.controller.addListener(_onControllerUpdated);
+    widget.controller.onRouteRecalculated = _onRouteRecalculated;
     widget.arManager.initializeSession();
-    widget.arManager.setTargetNode(widget.controller.nextTargetNode);
+    widget.arManager.setRoute(
+      widget.controller.path,
+      currentStepIndex: widget.controller.currentStepIndex,
+    );
+    widget.arManager.setTargetNode(
+      widget.controller.nextTargetNode,
+      currentStepIndex: widget.controller.currentStepIndex,
+    );
 
     if (widget.controller.positionProvider is NativeArPositionProvider) {
       final provider = widget.controller.positionProvider as NativeArPositionProvider;
@@ -78,6 +87,17 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
     }
 
     _initCamera();
+  }
+
+  void _onRouteRecalculated() {
+    widget.arManager.setRoute(
+      widget.controller.path,
+      currentStepIndex: widget.controller.currentStepIndex,
+    );
+    widget.arManager.setTargetNode(
+      widget.controller.nextTargetNode,
+      currentStepIndex: widget.controller.currentStepIndex,
+    );
   }
 
   void _showFigure8CalibrationGuide({bool isAutoTriggered = false}) {
@@ -124,7 +144,10 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
 
   void _realignForward() {
     widget.controller.completeCalibration();
-    widget.arManager.setTargetNode(widget.controller.nextTargetNode);
+    widget.arManager.setTargetNode(
+      widget.controller.nextTargetNode,
+      currentStepIndex: widget.controller.currentStepIndex,
+    );
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('🎯 Forward direction calibrated to your view!'),
@@ -135,7 +158,10 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
   }
 
   void _onControllerUpdated() {
-    widget.arManager.setTargetNode(widget.controller.nextTargetNode);
+    widget.arManager.setTargetNode(
+      widget.controller.nextTargetNode,
+      currentStepIndex: widget.controller.currentStepIndex,
+    );
 
     if (widget.controller.state == NavigationState.waypointReached) {
       _flashController.forward(from: 0.0);
@@ -341,19 +367,34 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
                 ),
               ),
 
-              // ── 3. AR FLOOR PATH (CustomPaint) ────────────────────────────
+              // ── 3. AR FLOOR BREADCRUMBS (1.2m Sequential Waypoints) ──────────
+              if (!isTrackingLost)
+                CustomPaint(
+                  size: Size.infinite,
+                  painter: BreadcrumbPainter(
+                    breadcrumbs: widget.arManager.breadcrumbs,
+                    alignmentService: widget.controller.alignmentService,
+                    cameraPose: widget.arManager.currentPose,
+                    trackingState: trackingState,
+                    activeSegmentIndex: widget.controller.currentStepIndex,
+                    primaryColor: arrowColor,
+                  ),
+                ),
+
+              // ── 3b. AR FLOOR PATH (CustomPaint) ────────────────────────────
               // This draws the perspective path, chevron, and progress dots
               // that look like they are painted ON THE FLOOR.
-              CustomPaint(
-                size: Size.infinite,
-                painter: ARPathPainter(
-                  relativeBearing: bearRad,
-                  distanceToNext: distNext,
-                  isFacingTarget: isFacingTarget,
-                  isTurningAround: isTurningAround,
-                  primaryColor: arrowColor,
+              if (!isTrackingLost)
+                CustomPaint(
+                  size: Size.infinite,
+                  painter: ARPathPainter(
+                    relativeBearing: bearRad,
+                    distanceToNext: distNext,
+                    isFacingTarget: isFacingTarget,
+                    isTurningAround: isTurningAround,
+                    primaryColor: arrowColor,
+                  ),
                 ),
-              ),
 
               // ── 4. Waypoint-reached blue flash ───────────────────────────
               AnimatedBuilder(
@@ -373,82 +414,177 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
               ),
 
               // ── 5. FLOATING CORRIDOR SIGN (bearing-offset arrow) ──────────
-              // This is the key AR trick: the sign slides LEFT/RIGHT on screen
-              // based on which direction you need to turn, making it appear
-              // as though it's positioned IN the corridor ahead of you.
-              Positioned(
-                left: signX,
-                top: size.height * signY,
-                child: Column(
-                  children: [
-                    // Glassmorphic sign card
-                    ScaleTransition(
-                      scale: Tween(begin: 0.97, end: 1.04)
-                          .animate(_pulseController),
-                      child: Container(
-                        width: 110,
-                        height: 110,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(22),
-                          color: arrowColor.withValues(alpha: 0.16),
-                          border: Border.all(
-                            color: arrowColor.withValues(alpha: 0.8),
-                            width: 2,
+              // Hidden when tracking is lost to prevent false guidance
+              if (!isTrackingLost)
+                Positioned(
+                  left: signX,
+                  top: size.height * signY,
+                  child: Column(
+                    children: [
+                      // Glassmorphic sign card
+                      ScaleTransition(
+                        scale: Tween(begin: 0.97, end: 1.04)
+                            .animate(_pulseController),
+                        child: Container(
+                          width: 110,
+                          height: 110,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(22),
+                            color: arrowColor.withValues(alpha: 0.16),
+                            border: Border.all(
+                              color: arrowColor.withValues(alpha: 0.8),
+                              width: 2,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: arrowColor.withValues(alpha: 0.40),
+                                blurRadius: 30,
+                                spreadRadius: 2,
+                              ),
+                            ],
                           ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: arrowColor.withValues(alpha: 0.40),
-                              blurRadius: 30,
-                              spreadRadius: 2,
+                          child: Icon(
+                            turnIcon,
+                            size: 60,
+                            color: arrowColor,
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 7),
+
+                      // Distance badge below sign
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.78),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: arrowColor.withValues(alpha: 0.6),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              isFacingTarget
+                                  ? Icons.check_circle_outline
+                                  : Icons.straighten,
+                              color: arrowColor,
+                              size: 14,
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              '${distNext.toStringAsFixed(1)} m',
+                              style: TextStyle(
+                                color: arrowColor,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
                             ),
                           ],
                         ),
-                        child: Icon(
-                          turnIcon,
-                          size: 60,
-                          color: arrowColor,
-                        ),
                       ),
-                    ),
-
-                    const SizedBox(height: 7),
-
-                    // Distance badge below sign
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.78),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: arrowColor.withValues(alpha: 0.6),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            isFacingTarget
-                                ? Icons.check_circle_outline
-                                : Icons.straighten,
-                            color: arrowColor,
-                            size: 14,
-                          ),
-                          const SizedBox(width: 5),
-                          Text(
-                            '${distNext.toStringAsFixed(1)} m',
-                            style: TextStyle(
-                              color: arrowColor,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
+
+              // ── 5b. Tracking Lost Safety Beacon Card (Phase 4) ────────────
+              if (isTrackingLost)
+                Center(
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 24),
+                    padding: const EdgeInsets.all(22),
+                    decoration: BoxDecoration(
+                      color: AppColors.navyDark.withValues(alpha: 0.94),
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(
+                        color: Colors.redAccent.withValues(alpha: 0.8),
+                        width: 1.8,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.redAccent.withValues(alpha: 0.28),
+                          blurRadius: 28,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.sensors_off_rounded,
+                            size: 48, color: Colors.redAccent),
+                        const SizedBox(height: 14),
+                        const Text(
+                          'TRACKING LOST',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.1,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '⬆ Destination: ${widget.targetNode.name}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${distTotal.toStringAsFixed(1)} m remaining',
+                          style: const TextStyle(
+                            color: AppColors.lightBlue,
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'AR projections paused. Move camera slowly or tap Re-align.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.white70, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+              // ── 5c. Tracking Limited Guidance Banner (Phase 4) ───────────
+              if (trackingState == TrackingState.limited)
+                Positioned(
+                  top: 86,
+                  left: 20,
+                  right: 20,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withValues(alpha: 0.25),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.amberAccent.withValues(alpha: 0.6)),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.warning_amber_rounded, color: Colors.amberAccent, size: 16),
+                        SizedBox(width: 8),
+                        Text(
+                          'Sensors adjusting · Move phone slowly',
+                          style: TextStyle(
+                            color: Colors.amberAccent,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
 
               // ── 6. Top Header Bar ─────────────────────────────────────────
               SafeArea(

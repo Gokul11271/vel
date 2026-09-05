@@ -50,22 +50,34 @@
       margin-bottom: 24px;
       box-shadow: 0 4px 12px rgba(0,0,0,0.03);
     }
-    .input-group {
+    .form-row {
       display: flex;
       gap: 12px;
-      margin-top: 16px;
+      margin-top: 14px;
     }
-    input[type="text"] {
+    .form-group {
       flex: 1;
-      padding: 12px 16px;
+    }
+    label {
+      font-size: 12px;
+      font-weight: bold;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    input[type="text"], input[type="number"] {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 12px 14px;
+      margin-top: 6px;
       border: 1px solid var(--border);
       border-radius: 12px;
-      font-size: 15px;
+      font-size: 14px;
       outline: none;
       background: var(--bg);
       color: var(--text-dark);
     }
-    input[type="text"]:focus {
+    input:focus {
       border-color: var(--accent);
     }
     button {
@@ -84,7 +96,7 @@
     }
     .qr-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
       gap: 20px;
       margin-top: 20px;
     }
@@ -126,34 +138,46 @@
   <div class="container">
     <div class="header">
       <h1>📍 Building Entrance QR Generator</h1>
-      <p>Print or scan these QR codes at your building entrance to launch AR Navigation</p>
+      <p>Print or scan these QR codes at your building entrance to automatically initialize zero-drift AR navigation</p>
     </div>
 
     <div class="card">
-      <h3 style="margin-top:0; color: var(--primary);">Generate Custom QR</h3>
-      <p style="font-size:14px; color: var(--text-muted);">Enter the Building ID used when saving your map (e.g. <code>building_01</code>):</p>
-      <div class="input-group">
-        <input type="text" id="buildingInput" value="building_01" placeholder="e.g. building_01">
-        <button onclick="updateCustomQR()">Generate QR</button>
+      <h3 style="margin-top:0; color: var(--primary);">Entrance QR Configuration</h3>
+      <div class="form-row">
+        <div class="form-group" style="flex: 2;">
+          <label>Building ID</label>
+          <input type="text" id="buildingInput" value="main_block" placeholder="e.g. main_block">
+        </div>
+        <div class="form-group">
+          <label>Entrance Node ID</label>
+          <input type="number" id="entranceInput" value="1" placeholder="1">
+        </div>
+        <div class="form-group">
+          <label>Azimuth Heading (°)</label>
+          <input type="number" id="headingInput" value="0.0" step="0.1" placeholder="0.0">
+        </div>
+      </div>
+      <div style="margin-top: 16px; text-align: right;">
+        <button onclick="updateCustomQR()">Generate Entrance QR</button>
       </div>
     </div>
 
     <div class="qr-grid">
       <div class="qr-item">
-        <div class="qr-title">🚪 Mapped Building Entrance</div>
+        <div class="qr-title">🚪 Zero-Drift Origin QR (JSON)</div>
         <div style="margin: 14px 0;">
-          <img id="qrCustom" src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=building_01" alt="Entrance QR">
+          <img id="qrJson" src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=%7B%22building%22%3A%22main_block%22%2C%22entrance%22%3A1%2C%22heading%22%3A0%7D" alt="JSON QR">
         </div>
-        <div id="qrCustomText" class="qr-code-text">building_01</div>
+        <div id="qrJsonText" class="qr-code-text">{"building":"main_block","entrance":1,"heading":0.0}</div>
         <button class="print-btn" onclick="window.print()">🖨️ Print QR</button>
       </div>
 
       <div class="qr-item">
-        <div class="qr-title">📦 JSON Format QR</div>
+        <div class="qr-title">🏷️ Building ID QR (Simple)</div>
         <div style="margin: 14px 0;">
-          <img id="qrJson" src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=%7B%22building%22%3A%22building_01%22%7D" alt="JSON QR">
+          <img id="qrCustom" src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=main_block" alt="Entrance QR">
         </div>
-        <div id="qrJsonText" class="qr-code-text">{"building":"building_01"}</div>
+        <div id="qrCustomText" class="qr-code-text">main_block</div>
         <button class="print-btn" onclick="window.print()">🖨️ Print QR</button>
       </div>
     </div>
@@ -161,13 +185,16 @@
 
   <script>
     function updateCustomQR() {
-      const id = document.getElementById('buildingInput').value.trim() || 'building_01';
-      const plainUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(id)}`;
-      const jsonObj = JSON.stringify({ building: id });
+      const bId = document.getElementById('buildingInput').value.trim() || 'main_block';
+      const entrance = parseInt(document.getElementById('entranceInput').value, 10) || 1;
+      const heading = parseFloat(document.getElementById('headingInput').value) || 0.0;
+
+      const jsonObj = JSON.stringify({ building: bId, entrance: entrance, heading: heading });
       const jsonUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(jsonObj)}`;
+      const plainUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(bId)}`;
 
       document.getElementById('qrCustom').src = plainUrl;
-      document.getElementById('qrCustomText').innerText = id;
+      document.getElementById('qrCustomText').innerText = bId;
       document.getElementById('qrJson').src = jsonUrl;
       document.getElementById('qrJsonText').innerText = jsonObj;
     }

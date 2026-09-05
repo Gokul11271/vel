@@ -25,14 +25,20 @@ class SimulationPositionProvider implements PositionProvider {
   }
 
   /// Sets position and calculates yaw towards a target
-  void setPosition({required double x, required double y, required double z, double? yawRadians}) {
+  void setPosition({
+    required double x,
+    required double y,
+    required double z,
+    double? yawRadians,
+    TrackingState trackingState = TrackingState.good,
+  }) {
     final yaw = yawRadians ?? _currentPose.yawRadians;
     final pose = Pose.fromValues(
       x: x,
       y: y,
       z: z,
       yawRadians: yaw,
-      trackingState: TrackingState.good,
+      trackingState: trackingState,
     );
     _emitPose(pose);
   }

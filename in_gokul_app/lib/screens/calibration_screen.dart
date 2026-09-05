@@ -17,12 +17,14 @@ class CalibrationScreen extends StatefulWidget {
   final Node startNode;
   final Node targetNode;
   final DijkstraResult routeResult;
+  final double? initialHeadingDegrees;
 
   const CalibrationScreen({
     super.key,
     required this.startNode,
     required this.targetNode,
     required this.routeResult,
+    this.initialHeadingDegrees,
   });
 
   @override
@@ -62,6 +64,9 @@ class _CalibrationScreenState extends State<CalibrationScreen> with SingleTicker
     )..repeat(reverse: true);
 
     _positionProvider.start();
+    if (widget.initialHeadingDegrees != null) {
+      _positionProvider.setHeadingRadians(widget.initialHeadingDegrees! * (3.141592653589793 / 180.0));
+    }
     _controller.beginCalibration();
 
     _anomalySubscription = _positionProvider.onMagneticAnomaly.listen((isAnomaly) {

@@ -81,19 +81,32 @@ class _QrScanScreenState extends State<QrScanScreen>
     _handleQrValue(barcode!.rawValue!);
   }
 
+  double? _scannedHeadingDegrees;
+
   Future<void> _handleQrValue(String raw) async {
     setState(() => _phase = _Phase.loading);
 
     try {
       // Parse QR — accept JSON object or plain building ID
       String buildingId;
+      int? qrEntranceId;
+      double? qrHeading;
+
       if (raw.trimLeft().startsWith('{')) {
         final dynamic decoded = jsonDecode(raw);
         final map = decoded as Map<String, dynamic>? ?? {};
         buildingId = map['building'] as String? ?? raw.trim();
+        if (map['entrance'] != null) {
+          qrEntranceId = (map['entrance'] as num).toInt();
+        }
+        if (map['heading'] != null) {
+          qrHeading = (map['heading'] as num).toDouble();
+        }
       } else {
         buildingId = raw.trim();
       }
+
+      _scannedHeadingDegrees = qrHeading;
 
       // Load saved map; fall back to bundled asset
       BuildingMap? map = await JsonService.loadSavedMap();
@@ -108,17 +121,19 @@ class _QrScanScreenState extends State<QrScanScreen>
                   ? w
                   : w[0].toUpperCase() + w.substring(1))
               .join(' '),
-          entranceNodeId: graph.nodes.values.isNotEmpty
-              ? graph.nodes.values.first.id
-              : 0,
+          entranceNodeId: qrEntranceId ??
+              (graph.nodes.values.isNotEmpty
+                  ? graph.nodes.values.first.id
+                  : 0),
           nodes: graph.nodes.values.toList(),
           edges: graph.edges,
         );
       }
 
       final graph = map.toGraph();
+      final entranceId = qrEntranceId ?? map.entranceNodeId;
       final entrance =
-          graph.nodes[map.entranceNodeId] ?? graph.nodes.values.firstOrNull;
+          graph.nodes[entranceId] ?? graph.nodes.values.firstOrNull;
 
       if (entrance == null) throw Exception('Building map has no nodes.');
 
@@ -157,6 +172,7 @@ class _QrScanScreenState extends State<QrScanScreen>
           startNode: start,
           targetNode: dest,
           routeResult: routeResult,
+          initialHeadingDegrees: _scannedHeadingDegrees,
         ),
       ),
     );
