@@ -20,6 +20,11 @@ class NativeArPositionProvider implements PositionProvider {
   StreamSubscription? _accelSubscription;
   StreamSubscription? _gyroSubscription;
 
+  final StreamController<bool> _anomalyController =
+      StreamController<bool>.broadcast();
+  Stream<bool> get onMagneticAnomaly => _anomalyController.stream;
+  int _anomalyTicks = 0;
+
   Pose _currentPose = Pose.identity();
   Vector3 _currentPosition = Vector3.zero();
   double _currentHeadingRadians = 0.0;
@@ -89,8 +94,20 @@ class NativeArPositionProvider implements PositionProvider {
             final headingDeg = event.heading;
             if (headingDeg != null && !_poseController.isClosed) {
               final rawHeadingRad = headingDeg * (pi / 180.0);
-              // Low-pass filter with angular wraparound protection
+              // Angular difference between incoming compass reading and filtered heading
               final diff = _normalizeAngle(rawHeadingRad - _currentHeadingRadians);
+
+              // Detect magnetic spikes (> 35 degrees / ~0.61 rad)
+              if (diff.abs() > 0.61) {
+                _anomalyTicks++;
+                if (_anomalyTicks >= 3 && !_anomalyController.isClosed) {
+                  _anomalyTicks = 0;
+                  _anomalyController.add(true);
+                }
+              } else {
+                if (_anomalyTicks > 0) _anomalyTicks--;
+              }
+
               // Slew rate limiter: reject sudden 90° magnetic spikes indoors
               final maxStep = 0.20; // ~11 degrees per compass frame max
               final clampedDiff = diff.clamp(-maxStep, maxStep);
@@ -282,5 +299,6 @@ class NativeArPositionProvider implements PositionProvider {
   void dispose() {
     stop();
     _poseController.close();
+    _anomalyController.close();
   }
 }

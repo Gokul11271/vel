@@ -1,5 +1,6 @@
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'dart:async';
 import '../controllers/navigation_controller.dart';
 import '../models/pose.dart';
 import '../models/node.dart';
@@ -9,6 +10,7 @@ import '../services/camera_service.dart';
 import '../tracking/native_ar_position_provider.dart';
 import '../theme/app_theme.dart';
 import '../ar/ar_manager.dart';
+import '../widgets/compass_calibration_dialog.dart';
 import 'ar_navigation_screen.dart';
 
 class CalibrationScreen extends StatefulWidget {
@@ -34,6 +36,8 @@ class _CalibrationScreenState extends State<CalibrationScreen> with SingleTicker
   late ARManager _arManager;
   late AnimationController _pulseController;
   final CameraService _cameraService = CameraService();
+  StreamSubscription<bool>? _anomalySubscription;
+  bool _isCalibrationSheetOpen = false;
   bool _isCalibrating = false;
   bool _isCameraReady = false;
 
@@ -60,7 +64,33 @@ class _CalibrationScreenState extends State<CalibrationScreen> with SingleTicker
     _positionProvider.start();
     _controller.beginCalibration();
 
+    _anomalySubscription = _positionProvider.onMagneticAnomaly.listen((isAnomaly) {
+      if (isAnomaly && mounted && !_isCalibrationSheetOpen && !_navigatedToAr) {
+        _showFigure8CalibrationGuide(isAutoTriggered: true);
+      }
+    });
+
     _setupCamera();
+  }
+
+  void _showFigure8CalibrationGuide({bool isAutoTriggered = false}) {
+    if (_isCalibrationSheetOpen) return;
+    _isCalibrationSheetOpen = true;
+    CompassCalibrationSheet.show(
+      context,
+      onDismissed: () {
+        _isCalibrationSheetOpen = false;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✨ Compass calibrated! Point forward and tap Align & Start.'),
+              backgroundColor: AppColors.primaryBlue,
+              duration: Duration(milliseconds: 1200),
+            ),
+          );
+        }
+      },
+    );
   }
 
   Future<void> _setupCamera() async {
@@ -76,6 +106,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> with SingleTicker
 
   @override
   void dispose() {
+    _anomalySubscription?.cancel();
     _pulseController.dispose();
     if (!_navigatedToAr) {
       _controller.dispose();
@@ -345,6 +376,24 @@ class _CalibrationScreenState extends State<CalibrationScreen> with SingleTicker
                                   ),
                                 ),
                               ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          // Figure-8 Calibration button
+                          GestureDetector(
+                            onTap: () => _showFigure8CalibrationGuide(isAutoTriggered: false),
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: Colors.amber.withValues(alpha: 0.18),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.amberAccent.withValues(alpha: 0.6)),
+                              ),
+                              child: const Icon(
+                                Icons.screen_rotation_alt_rounded,
+                                size: 16,
+                                color: Colors.amberAccent,
+                              ),
                             ),
                           ),
                         ],

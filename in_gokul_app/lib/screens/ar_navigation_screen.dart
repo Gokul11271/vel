@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
@@ -14,6 +15,7 @@ import '../theme/app_theme.dart';
 import '../widgets/debug_overlay.dart';
 import '../widgets/fps_counter.dart';
 import '../widgets/waypoint_marker.dart';
+import '../widgets/compass_calibration_dialog.dart';
 import 'success_screen.dart';
 
 class ArNavigationScreen extends StatefulWidget {
@@ -40,9 +42,11 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
   late AnimationController _flashController;
   final CameraService _cameraService = CameraService();
   final FpsCounter _fpsCounter = FpsCounter();
+  StreamSubscription<bool>? _anomalySubscription;
 
   bool _destinationNavigated = false;
   bool _isCameraReady = false;
+  bool _isCalibrationSheetOpen = false;
   bool _showDebug = kDebugMode;
 
   @override
@@ -64,7 +68,36 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
     widget.arManager.initializeSession();
     widget.arManager.setTargetNode(widget.controller.nextTargetNode);
 
+    if (widget.controller.positionProvider is NativeArPositionProvider) {
+      final provider = widget.controller.positionProvider as NativeArPositionProvider;
+      _anomalySubscription = provider.onMagneticAnomaly.listen((isAnomaly) {
+        if (isAnomaly && mounted && !_isCalibrationSheetOpen && !_destinationNavigated) {
+          _showFigure8CalibrationGuide(isAutoTriggered: true);
+        }
+      });
+    }
+
     _initCamera();
+  }
+
+  void _showFigure8CalibrationGuide({bool isAutoTriggered = false}) {
+    if (_isCalibrationSheetOpen) return;
+    _isCalibrationSheetOpen = true;
+    CompassCalibrationSheet.show(
+      context,
+      onDismissed: () {
+        _isCalibrationSheetOpen = false;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✨ Sensors re-calibrated successfully!'),
+              backgroundColor: AppColors.primaryBlue,
+              duration: Duration(milliseconds: 1200),
+            ),
+          );
+        }
+      },
+    );
   }
 
   @override
@@ -149,6 +182,7 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
 
   @override
   void dispose() {
+    _anomalySubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     widget.controller.removeListener(_onControllerUpdated);
     _pulseController.dispose();
@@ -482,6 +516,24 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
                                         fontWeight: FontWeight.bold),
                                   ),
                                 ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          // Figure-8 Calibration button
+                          GestureDetector(
+                            onTap: () => _showFigure8CalibrationGuide(isAutoTriggered: false),
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: Colors.amber.withValues(alpha: 0.18),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.amberAccent.withValues(alpha: 0.6)),
+                              ),
+                              child: const Icon(
+                                Icons.screen_rotation_alt_rounded,
+                                size: 16,
+                                color: Colors.amberAccent,
                               ),
                             ),
                           ),
