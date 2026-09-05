@@ -1,18 +1,21 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:vector_math/vector_math_64.dart' hide Colors;
 import '../models/node.dart';
 import '../models/edge.dart';
 import '../models/building_map.dart';
+import '../models/pose.dart';
 import '../services/json_service.dart';
 import '../tracking/native_ar_position_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/qr_export_dialog.dart';
 
-/// Mobile Mapper Screen
+/// Mobile Mapper Screen (Phase 7 Walkthrough Mapping Tool)
 /// Walk a corridor tapping "+" to drop nodes at your current position.
-/// The mapper auto-builds bidirectional edges between consecutive nodes,
-/// then saves a BuildingMap JSON to device storage and optionally shares it.
+/// Real-time top-down canvas visualizes the walked trail, node pins, and edges.
+/// Auto-builds bidirectional edges and exports QR origin alignment data.
 class MapperScreen extends StatefulWidget {
   final String buildingId;
   final String buildingName;
@@ -30,7 +33,9 @@ class MapperScreen extends StatefulWidget {
 class _MapperScreenState extends State<MapperScreen>
     with SingleTickerProviderStateMixin {
   final List<Node> _nodes = [];
+  final List<Vector3> _liveTrail = [];
   late final NativeArPositionProvider _posProvider;
+  StreamSubscription<Pose>? _poseSubscription;
   bool _saving = false;
 
   late AnimationController _pulseCtrl;
@@ -40,7 +45,21 @@ class _MapperScreenState extends State<MapperScreen>
   void initState() {
     super.initState();
     _posProvider = NativeArPositionProvider();
-    _posProvider.start(); // async — fires sensor listeners
+    _posProvider.start();
+
+    _poseSubscription = _posProvider.poseStream.listen((pose) {
+      if (mounted) {
+        setState(() {
+          final pos = pose.position;
+          if (_liveTrail.isEmpty || (_liveTrail.last - pos).length > 0.3) {
+            _liveTrail.add(pos.clone());
+            if (_liveTrail.length > 200) {
+              _liveTrail.removeAt(0);
+            }
+          }
+        });
+      }
+    });
 
     _pulseCtrl = AnimationController(
       vsync: this,
@@ -53,6 +72,7 @@ class _MapperScreenState extends State<MapperScreen>
 
   @override
   void dispose() {
+    _poseSubscription?.cancel();
     _posProvider.dispose();
     _pulseCtrl.dispose();
     super.dispose();
@@ -75,7 +95,7 @@ class _MapperScreenState extends State<MapperScreen>
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('📍 $name added'),
+        content: Text('📍 $name added at (${pos.x.toStringAsFixed(1)}, ${pos.z.toStringAsFixed(1)})'),
         duration: const Duration(milliseconds: 900),
         backgroundColor: AppColors.primaryBlue,
         behavior: SnackBarBehavior.floating,
@@ -186,7 +206,6 @@ class _MapperScreenState extends State<MapperScreen>
 
       final file = await JsonService.saveNavigationJson(map);
 
-      // Share sheet
       await Share.shareXFiles(
         [XFile(file.path)],
         subject: '${widget.buildingName} — navigation map',
@@ -200,7 +219,6 @@ class _MapperScreenState extends State<MapperScreen>
             behavior: SnackBarBehavior.floating,
           ),
         );
-        // Automatically pop up Entrance QR dialog for printing/placement
         QrExportDialog.show(
           context,
           buildingId: widget.buildingId,
@@ -227,6 +245,9 @@ class _MapperScreenState extends State<MapperScreen>
 
   @override
   Widget build(BuildContext context) {
+    final curPose = _posProvider.currentPose;
+    final headingDeg = (curPose.yawDegrees + 360) % 360;
+
     return Scaffold(
       backgroundColor: AppColors.creamBg,
       appBar: AppBar(
@@ -235,7 +256,7 @@ class _MapperScreenState extends State<MapperScreen>
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('🗺️ Mapper',
+            const Text('🗺️ Mobile Mapper',
                 style: TextStyle(color: AppColors.textDark, fontWeight: FontWeight.bold, fontSize: 18)),
             Text(
               widget.buildingName,
@@ -272,15 +293,95 @@ class _MapperScreenState extends State<MapperScreen>
       ),
       body: Column(
         children: [
+          // ── Real-time Top-Down Walk Canvas & Telemetry ──────────────────
+          Container(
+            height: 210,
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F172A),
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.12),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child: CustomPaint(
+                    size: const Size(double.infinity, 210),
+                    painter: _MapperRadarPainter(
+                      nodes: _nodes,
+                      trail: _liveTrail,
+                      currentPose: curPose,
+                    ),
+                  ),
+                ),
+                // Telemetry overlay badge
+                Positioned(
+                  top: 10,
+                  left: 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.70),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.white24),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.explore_rounded, color: Colors.cyanAccent, size: 14),
+                        const SizedBox(width: 5),
+                        Text(
+                          '${headingDeg.toStringAsFixed(0)}°  |  ${_posProvider.totalSteps} steps',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 10,
+                  right: 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.70),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '(${curPose.position.x.toStringAsFixed(1)}, ${curPose.position.z.toStringAsFixed(1)}) m',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 10,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
           // ── Status banner ───────────────────────────────────────────────
           _buildStatusBanner(),
 
-          // ── Node chip list ──────────────────────────────────────────────
+          // ── Node list ───────────────────────────────────────────────────
           Expanded(
             child: _nodes.isEmpty
                 ? _buildEmptyState()
                 : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     itemCount: _nodes.length,
                     itemBuilder: (_, i) => _buildNodeTile(i),
                   ),
@@ -309,25 +410,23 @@ class _MapperScreenState extends State<MapperScreen>
 
   Widget _buildStatusBanner() {
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: AppColors.softBlue,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.softBlueBorder),
       ),
       child: Row(
         children: [
-          const Icon(Icons.my_location_rounded, color: AppColors.primaryBlue, size: 20),
-          const SizedBox(width: 12),
+          const Icon(Icons.my_location_rounded, color: AppColors.primaryBlue, size: 18),
+          const SizedBox(width: 10),
           Expanded(
             child: Text(
               _nodes.isEmpty
-                  ? 'Stand at the entrance and tap ➕ to drop the first node.'
-                  : '${_nodes.length} node${_nodes.length == 1 ? '' : 's'} mapped'
-                      ' · ${_buildEdges().length ~/ 2} edges'
-                      ' · Long-press to rename',
-              style: const TextStyle(color: AppColors.primaryBlue, fontSize: 13, fontWeight: FontWeight.w500),
+                  ? 'Stand at entrance and tap ➕ to drop Node 0.'
+                  : '${_nodes.length} nodes mapped · ${_buildEdges().length ~/ 2} corridor edges',
+              style: const TextStyle(color: AppColors.primaryBlue, fontSize: 12, fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -340,14 +439,11 @@ class _MapperScreenState extends State<MapperScreen>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.map_outlined,
-              size: 72, color: AppColors.textSubtle.withValues(alpha: 0.4)),
-          const SizedBox(height: 16),
-          const Text('No nodes yet',
-              style: TextStyle(color: AppColors.textMuted, fontSize: 16, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 6),
-          const Text('Walk to a location and tap ➕',
-              style: TextStyle(color: AppColors.textSubtle, fontSize: 13)),
+          Icon(Icons.directions_walk_rounded,
+              size: 56, color: AppColors.textSubtle.withValues(alpha: 0.4)),
+          const SizedBox(height: 12),
+          const Text('Walk along corridor and tap ➕ to drop nodes',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 14, fontWeight: FontWeight.w600)),
         ],
       ),
     );
@@ -371,26 +467,18 @@ class _MapperScreenState extends State<MapperScreen>
     return GestureDetector(
       onLongPress: () => _renameNode(index),
       child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           color: AppColors.creamSurface,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(color: isFirst ? AppColors.primaryBlue : AppColors.creamBorder),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.02),
-              blurRadius: 4,
-              offset: const Offset(0, 1),
-            ),
-          ],
         ),
         child: Row(
           children: [
-            // Step dot
             Container(
-              width: 34,
-              height: 34,
+              width: 30,
+              height: 30,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: dotBg,
@@ -399,14 +487,11 @@ class _MapperScreenState extends State<MapperScreen>
               child: Center(
                 child: Text(
                   '${index + 1}',
-                  style: TextStyle(
-                      color: dotColor,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12),
+                  style: TextStyle(color: dotColor, fontWeight: FontWeight.bold, fontSize: 11),
                 ),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -415,20 +500,18 @@ class _MapperScreenState extends State<MapperScreen>
                       style: const TextStyle(
                           color: AppColors.textDark,
                           fontWeight: FontWeight.w600,
-                          fontSize: 14)),
+                          fontSize: 13)),
                   Text(
-                    '(${node.x.toStringAsFixed(2)}, ${node.y.toStringAsFixed(2)}, ${node.z.toStringAsFixed(2)})',
+                    '(${node.x.toStringAsFixed(2)}, ${node.z.toStringAsFixed(2)}) m',
                     style: const TextStyle(color: AppColors.textSubtle, fontSize: 11),
                   ),
                 ],
               ),
             ),
             if (isFirst)
-              const Icon(Icons.door_front_door_rounded,
-                  color: AppColors.primaryBlue, size: 18),
+              const Icon(Icons.door_front_door_rounded, color: AppColors.primaryBlue, size: 16),
             if (isLast && _nodes.length > 1)
-              const Icon(Icons.flag_rounded,
-                  color: AppColors.warning, size: 18),
+              const Icon(Icons.flag_rounded, color: AppColors.warning, size: 16),
           ],
         ),
       ),
@@ -438,35 +521,140 @@ class _MapperScreenState extends State<MapperScreen>
   Widget _buildBottomBar() {
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-        child: Row(
-          children: [
-            // Save button
-            Expanded(
-              child: ElevatedButton.icon(
-                icon: _saving
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Icon(Icons.save_rounded, size: 18),
-                label: Text(_saving ? 'Saving…' : '💾 Save Map'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primaryBlue,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(0, 50),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                  elevation: 2,
-                ),
-                onPressed: _saving || _nodes.length < 2 ? null : _saveMap,
-              ),
-            ),
-          ],
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+        child: ElevatedButton.icon(
+          icon: _saving
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                )
+              : const Icon(Icons.save_rounded, size: 18),
+          label: Text(_saving ? 'Saving…' : '💾 Save Map & Export QR'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primaryBlue,
+            foregroundColor: Colors.white,
+            minimumSize: const Size(double.infinity, 48),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          ),
+          onPressed: _saving || _nodes.length < 2 ? null : _saveMap,
         ),
       ),
     );
   }
 }
+
+/// Custom radar canvas for live PDR walking trail and node pins
+class _MapperRadarPainter extends CustomPainter {
+  final List<Node> nodes;
+  final List<Vector3> trail;
+  final Pose currentPose;
+
+  _MapperRadarPainter({
+    required this.nodes,
+    required this.trail,
+    required this.currentPose,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width * 0.5;
+    final cy = size.height * 0.5;
+
+    // Grid lines
+    final gridPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.06)
+      ..strokeWidth = 1.0;
+    for (double x = 0; x < size.width; x += 30) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
+    }
+    for (double y = 0; y < size.height; y += 30) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+    }
+
+    const scale = 14.0; // 14 pixels per metre
+
+    // Draw trail
+    if (trail.length >= 2) {
+      final trailPath = Path();
+      for (int i = 0; i < trail.length; i++) {
+        final sx = cx + trail[i].x * scale;
+        final sy = cy + trail[i].z * scale;
+        if (i == 0) {
+          trailPath.moveTo(sx, sy);
+        } else {
+          trailPath.lineTo(sx, sy);
+        }
+      }
+      final trailPaint = Paint()
+        ..color = Colors.cyanAccent.withValues(alpha: 0.35)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0;
+      canvas.drawPath(trailPath, trailPaint);
+    }
+
+    // Draw node edges
+    if (nodes.length >= 2) {
+      final edgePaint = Paint()
+        ..color = AppColors.lightBlue.withValues(alpha: 0.8)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.0;
+      for (int i = 0; i < nodes.length - 1; i++) {
+        final p1 = Offset(cx + nodes[i].x * scale, cy + nodes[i].z * scale);
+        final p2 = Offset(cx + nodes[i + 1].x * scale, cy + nodes[i + 1].z * scale);
+        canvas.drawLine(p1, p2, edgePaint);
+      }
+    }
+
+    // Draw node pins
+    for (int i = 0; i < nodes.length; i++) {
+      final n = nodes[i];
+      final pt = Offset(cx + n.x * scale, cy + n.z * scale);
+      final isFirst = i == 0;
+      final isLast = i == nodes.length - 1;
+
+      final pinPaint = Paint()
+        ..color = isFirst
+            ? Colors.greenAccent
+            : isLast
+                ? Colors.amberAccent
+                : AppColors.primaryBlue
+        ..style = PaintingStyle.fill;
+      canvas.drawCircle(pt, 6.0, pinPaint);
+
+      final strokePaint = Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5;
+      canvas.drawCircle(pt, 6.0, strokePaint);
+    }
+
+    // Draw live user position dot and heading beam
+    final userX = cx + currentPose.position.x * scale;
+    final userY = cy + currentPose.position.z * scale;
+    final userPt = Offset(userX, userY);
+
+    // Directional cone
+    final yaw = currentPose.yawRadians;
+    final conePaint = Paint()
+      ..color = Colors.cyanAccent.withValues(alpha: 0.25)
+      ..style = PaintingStyle.fill;
+    final conePath = Path();
+    conePath.moveTo(userPt.dx, userPt.dy);
+    final len = 28.0;
+    conePath.lineTo(userPt.dx + len * sin(yaw - 0.4), userPt.dy - len * cos(yaw - 0.4));
+    conePath.lineTo(userPt.dx + len * sin(yaw + 0.4), userPt.dy - len * cos(yaw + 0.4));
+    conePath.close();
+    canvas.drawPath(conePath, conePaint);
+
+    // User dot
+    final userPaint = Paint()
+      ..color = Colors.cyanAccent
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(userPt, 5.0, userPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _MapperRadarPainter oldDelegate) => true;
+}
+

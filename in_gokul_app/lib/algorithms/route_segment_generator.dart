@@ -9,8 +9,8 @@ import '../models/breadcrumb.dart';
 /// - 2D / 3D Canvas Perspective Projector (Flutter)
 /// - Native ARCore / ARKit Surface Plane Anchors (Native Phase 5)
 class RouteSegmentGenerator {
-  /// Default spacing between floor breadcrumbs (1.2 metres).
-  static const double defaultSpacingM = 1.2;
+  /// Default spacing between floor breadcrumbs (1.0 metres).
+  static const double defaultSpacingM = 1.0;
 
   /// Generates an interpolated sequence of [Breadcrumb] points along [path].
   static List<Breadcrumb> generateBreadcrumbs(

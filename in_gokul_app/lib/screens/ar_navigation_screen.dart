@@ -219,27 +219,128 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
     super.dispose();
   }
 
-  // ─── Turn helpers ──────────────────────────────────────────────────────────
+  // ─── Turn angle & countdown engine (Phase 9) ──────────────────────────────
 
-  String _getTurnInstruction(double bearRad, double dist, String? name) {
-    if (dist <= 1.2) return '✓  Arriving at ${name ?? "waypoint"}';
-    final deg = bearRad * (180 / pi);
-    if (deg.abs() < 18) return 'Go straight  (${dist.toStringAsFixed(1)} m)';
-    if (deg < -18 && deg > -65) return 'Bear left toward ${name ?? "target"}';
-    if (deg <= -65 && deg > -125) return 'Turn left toward ${name ?? "target"}';
-    if (deg > 18 && deg < 65) return 'Bear right toward ${name ?? "target"}';
-    if (deg >= 65 && deg < 125) return 'Turn right toward ${name ?? "target"}';
-    return 'Turn around  —  ${name ?? "target"} is behind you';
+  /// Analyzes the upcoming path geometry and returns context-aware turn instructions
+  String _getTurnInstruction(
+    double bearRad,
+    double distNext,
+    String? nextName,
+    List<Node> path,
+    int stepIndex,
+  ) {
+    // If user is facing completely the wrong way (> 125 degrees off-axis)
+    final relativeDeg = bearRad * (180.0 / pi);
+    if (relativeDeg.abs() > 125) {
+      return '🔄 Turn around  —  path is behind you';
+    }
+
+    final isFinalLeg = (stepIndex >= path.length - 2);
+
+    if (isFinalLeg) {
+      if (distNext <= 1.5) {
+        return '🏁 Arriving at ${nextName ?? "destination"}';
+      }
+      if (distNext <= 6.0) {
+        return '🏁 Destination in ${distNext.toStringAsFixed(1)} m';
+      }
+      return 'Continue Straight for ${distNext.toStringAsFixed(1)} m';
+    }
+
+    // Calculate upcoming corner turn angle between segment (step -> step+1) and (step+1 -> step+2)
+    final p0 = path[stepIndex];
+    final p1 = path[stepIndex + 1];
+    final p2 = path[stepIndex + 2];
+
+    final v1x = p1.x - p0.x;
+    final v1z = p1.z - p0.z;
+    final v2x = p2.x - p1.x;
+    final v2z = p2.z - p1.z;
+
+    final angle1 = atan2(v1x, -v1z);
+    final angle2 = atan2(v2x, -v2z);
+    var turnDiff = angle2 - angle1;
+    while (turnDiff > pi) {
+      turnDiff -= 2 * pi;
+    }
+    while (turnDiff < -pi) {
+      turnDiff += 2 * pi;
+    }
+    final turnDeg = turnDiff * (180.0 / pi);
+
+    // Is there a significant turn at the next waypoint?
+    final hasTurn = turnDeg.abs() >= 22.0;
+
+    if (hasTurn) {
+      final isRight = turnDeg > 0;
+      final isSharp = turnDeg.abs() >= 60.0;
+      final isUTurn = turnDeg.abs() >= 130.0;
+
+      if (distNext <= 2.0) {
+        if (isUTurn) return '🔄 Make U-Turn Now';
+        if (isSharp) return isRight ? '👉 Turn Right Now' : '👈 Turn Left Now';
+        return isRight ? '↗️ Bear Right Now' : '↖️ Bear Left Now';
+      } else if (distNext <= 8.0) {
+        final distStr = '${distNext.toStringAsFixed(1)} m';
+        if (isUTurn) return 'Make U-Turn in $distStr';
+        if (isSharp) return isRight ? 'Turn Right in $distStr' : 'Turn Left in $distStr';
+        return isRight ? 'Bear Right in $distStr' : 'Bear Left in $distStr';
+      }
+    }
+
+    // Default straight navigation
+    if (distNext <= 1.2) {
+      return '✓ Approaching ${nextName ?? "waypoint"}';
+    }
+    return 'Continue Straight for ${distNext.toStringAsFixed(1)} m';
   }
 
-  IconData _getTurnIcon(double bearRad) {
-    final deg = bearRad * (180 / pi);
-    if (deg.abs() < 18) return Icons.arrow_upward_rounded;
-    if (deg < -18 && deg > -65) return Icons.turn_slight_left_rounded;
-    if (deg <= -65 && deg > -125) return Icons.turn_left_rounded;
-    if (deg > 18 && deg < 65) return Icons.turn_slight_right_rounded;
-    if (deg >= 65 && deg < 125) return Icons.turn_right_rounded;
-    return Icons.u_turn_left_rounded;
+  IconData _getTurnIcon(
+    double bearRad,
+    double distNext,
+    List<Node> path,
+    int stepIndex,
+  ) {
+    final relativeDeg = bearRad * (180.0 / pi);
+    if (relativeDeg.abs() > 125) {
+      return Icons.u_turn_left_rounded;
+    }
+
+    if (stepIndex < path.length - 2 && distNext <= 8.0) {
+      final p0 = path[stepIndex];
+      final p1 = path[stepIndex + 1];
+      final p2 = path[stepIndex + 2];
+
+      final v1x = p1.x - p0.x;
+      final v1z = p1.z - p0.z;
+      final v2x = p2.x - p1.x;
+      final v2z = p2.z - p1.z;
+
+      final angle1 = atan2(v1x, -v1z);
+      final angle2 = atan2(v2x, -v2z);
+      var turnDiff = angle2 - angle1;
+      while (turnDiff > pi) {
+        turnDiff -= 2 * pi;
+      }
+      while (turnDiff < -pi) {
+        turnDiff += 2 * pi;
+      }
+      final turnDeg = turnDiff * (180.0 / pi);
+
+      if (turnDeg.abs() >= 22.0) {
+        if (turnDeg >= 65) return Icons.turn_right_rounded;
+        if (turnDeg >= 22) return Icons.turn_slight_right_rounded;
+        if (turnDeg <= -65) return Icons.turn_left_rounded;
+        if (turnDeg <= -22) return Icons.turn_slight_left_rounded;
+      }
+    }
+
+    if (relativeDeg < -20 && relativeDeg > -65) return Icons.turn_slight_left_rounded;
+    if (relativeDeg <= -65) return Icons.turn_left_rounded;
+    if (relativeDeg > 20 && relativeDeg < 65) return Icons.turn_slight_right_rounded;
+    if (relativeDeg >= 65) return Icons.turn_right_rounded;
+
+    return Icons.arrow_upward_rounded;
   }
 
   // ─── Build ──────────────────────────────────────────────────────────────────
@@ -283,9 +384,19 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
             ? 1.0
             : (widget.controller.currentStepIndex + 1) / totalNodes;
 
-        final turnInstruction =
-            _getTurnInstruction(bearRad, distNext, nextNode?.name);
-        final turnIcon = _getTurnIcon(bearRad);
+        final turnInstruction = _getTurnInstruction(
+          bearRad,
+          distNext,
+          nextNode?.name,
+          widget.controller.path,
+          widget.controller.currentStepIndex,
+        );
+        final turnIcon = _getTurnIcon(
+          bearRad,
+          distNext,
+          widget.controller.path,
+          widget.controller.currentStepIndex,
+        );
 
         // ── Floating sign screen position ──────────────────────────────────
         // The sign slides LEFT/RIGHT based on bearing — looks like it's
