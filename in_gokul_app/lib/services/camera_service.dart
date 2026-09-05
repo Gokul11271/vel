@@ -13,19 +13,25 @@ class CameraService {
   String? _errorMessage;
 
   CameraController? get controller => _controller;
-  bool get isInitialized => _isInitialized && _controller != null && _controller!.value.isInitialized;
+  bool get isInitialized =>
+      _isInitialized &&
+      _controller != null &&
+      _controller!.value.isInitialized;
   String? get errorMessage => _errorMessage;
 
   /// Requests camera permission and initializes the back camera
-  Future<bool> initializeCamera() async {
-    if (isInitialized) return true;
+  Future<bool> initializeCamera({bool force = false}) async {
+    if (!force && isInitialized) return true;
 
     try {
       // 1. Request camera permission on mobile platforms
-      if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS)) {
+      if (!kIsWeb &&
+          (defaultTargetPlatform == TargetPlatform.android ||
+              defaultTargetPlatform == TargetPlatform.iOS)) {
         final status = await Permission.camera.request();
         if (!status.isGranted) {
-          _errorMessage = 'Camera permission was denied. Please grant permission in App Settings.';
+          _errorMessage =
+              'Camera permission was denied. Please grant permission in App Settings.';
           debugPrint(_errorMessage);
           return false;
         }
@@ -45,11 +51,18 @@ class CameraService {
         orElse: () => _cameras.first,
       );
 
-      // 4. Initialize CameraController
-      await _controller?.dispose();
+      // 4. Dispose existing controller safely
+      if (_controller != null) {
+        try {
+          await _controller!.dispose();
+        } catch (_) {}
+        _controller = null;
+      }
+
+      // 5. Initialize CameraController with medium preset for maximum frame-rate stability
       _controller = CameraController(
         backCamera,
-        ResolutionPreset.high,
+        ResolutionPreset.medium,
         enableAudio: false,
       );
 
@@ -65,10 +78,19 @@ class CameraService {
     }
   }
 
+  /// Forces re-initialization of the camera stream
+  Future<bool> restartCamera() async {
+    return initializeCamera(force: true);
+  }
+
   /// Pause/dispose camera when leaving screen
   Future<void> disposeCamera() async {
     _isInitialized = false;
-    await _controller?.dispose();
-    _controller = null;
+    if (_controller != null) {
+      try {
+        await _controller!.dispose();
+      } catch (_) {}
+      _controller = null;
+    }
   }
 }

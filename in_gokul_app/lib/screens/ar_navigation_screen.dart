@@ -35,7 +35,7 @@ class ArNavigationScreen extends StatefulWidget {
 }
 
 class _ArNavigationScreenState extends State<ArNavigationScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late AnimationController _pulseController;
   late AnimationController _flashController;
   final CameraService _cameraService = CameraService();
@@ -48,6 +48,7 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     _pulseController = AnimationController(
       vsync: this,
@@ -66,11 +67,38 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
     _initCamera();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _cameraService.initializeCamera(force: true).then((ready) {
+        if (mounted) setState(() => _isCameraReady = ready);
+      });
+    }
+  }
+
   Future<void> _initCamera() async {
     final success = _cameraService.isInitialized
         ? true
         : await _cameraService.initializeCamera();
     if (mounted) setState(() => _isCameraReady = success);
+  }
+
+  Future<void> _forceRestartCamera() async {
+    setState(() => _isCameraReady = false);
+    final success = await _cameraService.restartCamera();
+    if (mounted) setState(() => _isCameraReady = success);
+  }
+
+  void _realignForward() {
+    widget.controller.completeCalibration();
+    widget.arManager.setTargetNode(widget.controller.nextTargetNode);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('🎯 Forward direction calibrated to your view!'),
+        backgroundColor: AppColors.primaryBlue,
+        duration: Duration(milliseconds: 900),
+      ),
+    );
   }
 
   void _onControllerUpdated() {
@@ -121,6 +149,7 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.controller.removeListener(_onControllerUpdated);
     _pulseController.dispose();
     _flashController.dispose();
@@ -424,6 +453,56 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
                           ),
                           _TrackingBadge(
                               isGood: isTrackingGood, isLost: isTrackingLost),
+                          const SizedBox(width: 4),
+                          // Re-align button
+                          GestureDetector(
+                            onTap: _realignForward,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: AppColors.primaryBlue
+                                    .withValues(alpha: 0.35),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                    color: AppColors.lightBlue
+                                        .withValues(alpha: 0.6)),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.gps_fixed,
+                                      size: 14, color: AppColors.lightBlue),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    'Re-align',
+                                    style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          // Refresh Camera button
+                          GestureDetector(
+                            onTap: _forceRestartCamera,
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.white24),
+                              ),
+                              child: const Icon(
+                                Icons.refresh_rounded,
+                                size: 16,
+                                color: Colors.white70,
+                              ),
+                            ),
+                          ),
                           const SizedBox(width: 4),
                           GestureDetector(
                             onTap: () =>

@@ -5,6 +5,6 @@ void main() {
   testWidgets('App loads test', (WidgetTester tester) async {
     await tester.pumpWidget(const IndoorNavigationApp());
     await tester.pumpAndSettle();
-    expect(find.text('Indoor Navigation'), findsOneWidget);
+    expect(find.text('Indoor Navigator'), findsOneWidget);
   });
 }

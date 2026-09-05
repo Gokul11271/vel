@@ -18,12 +18,14 @@ class NativeArPositionProvider implements PositionProvider {
   StreamSubscription? _platformSubscription;
   StreamSubscription? _compassSubscription;
   StreamSubscription? _accelSubscription;
+  StreamSubscription? _gyroSubscription;
 
   Pose _currentPose = Pose.identity();
   Vector3 _currentPosition = Vector3.zero();
   double _currentHeadingRadians = 0.0;
   bool _isTracking = false;
   DateTime _lastStepTime = DateTime.now();
+  DateTime _lastGyroTime = DateTime.now();
 
   // --- Pitch & dynamic acceleration state ---
   double _pitchRadians = 0.0;
@@ -31,9 +33,9 @@ class NativeArPositionProvider implements PositionProvider {
 
   // --- Step detection hysteresis ---
   bool _stepPeak = false;
-  static const double _stepThresholdHigh = 0.48; // Peak acceleration when foot strikes (m/s²)
+  static const double _stepThresholdHigh = 0.48; // Peak acceleration (m/s²)
   static const double _stepThresholdLow = 0.20;  // Reset threshold (m/s²)
-  static const int _stepMinIntervalMs = 240;     // Min time between steps (~4 steps/sec max)
+  static const int _stepMinIntervalMs = 240;     // Min time between steps
 
   int _totalSteps = 0;
   int get totalSteps => _totalSteps;
@@ -54,16 +56,29 @@ class NativeArPositionProvider implements PositionProvider {
     if (_isTracking) return;
     _isTracking = true;
 
-    // 1. Real-time device compass / magnetometer
+    // 1. Real-time compass with magnetic noise rejection
     _initCompassTracking();
 
-    // 2. Accelerometer: step detection + pitch estimation
+    // 2. Gyroscope assistance for smooth relative turning
+    _initGyroscopeTracking();
+
+    // 3. Accelerometer: step detection + pitch estimation
     _initStepDetection();
 
-    // 3. Optional: native ARCore/ARKit pose stream (if platform plugin active)
+    // 4. Optional native AR session
     _initNativeARSession();
 
     _emitCurrentPose();
+  }
+
+  double _normalizeAngle(double a) {
+    while (a > pi) {
+      a -= 2 * pi;
+    }
+    while (a < -pi) {
+      a += 2 * pi;
+    }
+    return a;
   }
 
   void _initCompassTracking() {
@@ -73,7 +88,14 @@ class NativeArPositionProvider implements PositionProvider {
           (CompassEvent event) {
             final headingDeg = event.heading;
             if (headingDeg != null && !_poseController.isClosed) {
-              _currentHeadingRadians = headingDeg * (pi / 180.0);
+              final rawHeadingRad = headingDeg * (pi / 180.0);
+              // Low-pass filter with angular wraparound protection
+              final diff = _normalizeAngle(rawHeadingRad - _currentHeadingRadians);
+              // Slew rate limiter: reject sudden 90° magnetic spikes indoors
+              final maxStep = 0.20; // ~11 degrees per compass frame max
+              final clampedDiff = diff.clamp(-maxStep, maxStep);
+
+              _currentHeadingRadians = _normalizeAngle(_currentHeadingRadians + clampedDiff);
               _updateRotationFromSensors();
             }
           },
@@ -83,16 +105,38 @@ class NativeArPositionProvider implements PositionProvider {
     } catch (_) {}
   }
 
+  void _initGyroscopeTracking() {
+    try {
+      _lastGyroTime = DateTime.now();
+      _gyroSubscription = gyroscopeEventStream().listen(
+        (GyroscopeEvent event) {
+          final now = DateTime.now();
+          final dt = now.difference(_lastGyroTime).inMicroseconds / 1000000.0;
+          _lastGyroTime = now;
+
+          if (dt > 0.001 && dt < 0.2) {
+            // Gyro Z axis is rotation around phone screen normal in portrait
+            // Integrate gyro angular velocity for instantaneous responsive turn
+            final gyroDelta = -event.z * dt;
+            if (gyroDelta.abs() > 0.002) {
+              _currentHeadingRadians = _normalizeAngle(_currentHeadingRadians + gyroDelta);
+              _updateRotationFromSensors();
+            }
+          }
+        },
+        onError: (_) {},
+      );
+    } catch (_) {}
+  }
+
   void _initStepDetection() {
     try {
-      // 1. User linear acceleration (gravity already removed by OS sensor fusion)
+      // 1. User linear acceleration (gravity already removed by OS)
       _accelSubscription = userAccelerometerEventStream().listen(
         (UserAccelerometerEvent event) {
           final rawMag = sqrt(event.x * event.x + event.y * event.y + event.z * event.z);
-          // Exponential moving average for smooth peak detection
           _filteredMag = 0.35 * rawMag + 0.65 * _filteredMag;
 
-          // Hysteresis peak detector
           final now = DateTime.now();
           if (!_stepPeak &&
               _filteredMag > _stepThresholdHigh &&
@@ -102,13 +146,13 @@ class NativeArPositionProvider implements PositionProvider {
             _totalSteps++;
             stepForward(0.65); // 65 cm per step
           } else if (_stepPeak && _filteredMag < _stepThresholdLow) {
-            _stepPeak = false; // Reset for next footfall
+            _stepPeak = false;
           }
         },
         onError: (_) {},
       );
 
-      // 2. Raw accelerometer to estimate device pitch (tilt) from gravity
+      // 2. Gravity vector for device pitch estimation
       accelerometerEventStream().listen(
         (AccelerometerEvent event) {
           final gMag = sqrt(event.x * event.x + event.y * event.y + event.z * event.z);
@@ -142,7 +186,6 @@ class NativeArPositionProvider implements PositionProvider {
                 ? TrackingState.values[stateIndex]
                 : TrackingState.good;
 
-            // Native AR session takes full priority over sensor fusion
             _currentPosition = Vector3(x, y, z);
             final rot = Quaternion(qx, qy, qz, qw);
             _currentPose = Pose(
@@ -159,8 +202,6 @@ class NativeArPositionProvider implements PositionProvider {
     } catch (_) {}
   }
 
-  /// Builds full 6DOF rotation quaternion from compass heading + accelerometer pitch.
-  /// Q = Ry(yaw) * Rx(pitch)
   void _updateRotationFromSensors() {
     final qYaw = Quaternion.axisAngle(Vector3(0, 1, 0), _currentHeadingRadians);
     final qPitch = Quaternion.axisAngle(Vector3(1, 0, 0), _pitchRadians);
@@ -176,7 +217,13 @@ class NativeArPositionProvider implements PositionProvider {
     _emitCurrentPose();
   }
 
-  /// Steps forward by [meters] in the direction of the current compass heading
+  /// Sets heading directly (e.g. for manual alignment or compass recalibration)
+  void setHeadingRadians(double rad) {
+    _currentHeadingRadians = _normalizeAngle(rad);
+    _updateRotationFromSensors();
+  }
+
+  /// Steps forward in direction of current compass heading
   void stepForward(double meters) {
     final dx = sin(_currentHeadingRadians) * meters;
     final dz = -cos(_currentHeadingRadians) * meters;
@@ -185,7 +232,7 @@ class NativeArPositionProvider implements PositionProvider {
     _updateRotationFromSensors();
   }
 
-  /// Steps towards a specified world target coordinate by [stepMeters]
+  /// Steps towards a specified world target coordinate
   void stepTowards(Vector3 targetPos, {double stepMeters = 0.8}) {
     final delta = targetPos - _currentPosition;
     final dist = delta.length;
@@ -199,7 +246,6 @@ class NativeArPositionProvider implements PositionProvider {
     _updateRotationFromSensors();
   }
 
-  /// Sets position directly (e.g. from GPS or node anchor)
   void setPosition(Vector3 pos) {
     _currentPosition = pos.clone();
     _updateRotationFromSensors();
@@ -221,9 +267,11 @@ class NativeArPositionProvider implements PositionProvider {
     _isTracking = false;
     await _platformSubscription?.cancel();
     await _compassSubscription?.cancel();
+    await _gyroSubscription?.cancel();
     await _accelSubscription?.cancel();
     _platformSubscription = null;
     _compassSubscription = null;
+    _gyroSubscription = null;
     _accelSubscription = null;
     try {
       await _methodChannel.invokeMethod('stopArSession');
