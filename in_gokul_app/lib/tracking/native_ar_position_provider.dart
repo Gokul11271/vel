@@ -36,11 +36,12 @@ class NativeArPositionProvider implements PositionProvider {
   double _pitchRadians = 0.0;
   double _filteredMag = 0.0;
 
-  // --- Step detection hysteresis ---
+  // --- Step detection hysteresis (tuned for natural handheld indoor walking) ---
   bool _stepPeak = false;
-  static const double _stepThresholdHigh = 0.48; // Peak acceleration (m/s²)
-  static const double _stepThresholdLow = 0.20;  // Reset threshold (m/s²)
-  static const int _stepMinIntervalMs = 240;     // Min time between steps
+  static const double _stepThresholdHigh = 0.32; // Peak dynamic acceleration (m/s²)
+  static const double _stepThresholdLow = 0.12;  // Reset threshold (m/s²)
+  static const int _stepMinIntervalMs = 280;     // Min time between steps (~3.5 steps/sec max)
+  static const double defaultStepLengthM = 0.70; // 70 cm per adult stride
 
   int _totalSteps = 0;
   int get totalSteps => _totalSteps;
@@ -108,8 +109,8 @@ class NativeArPositionProvider implements PositionProvider {
                 if (_anomalyTicks > 0) _anomalyTicks--;
               }
 
-              // Slew rate limiter: reject sudden 90° magnetic spikes indoors
-              final maxStep = 0.20; // ~11 degrees per compass frame max
+              // Slew rate limiter: reject sudden magnetic fluctuations indoors
+              final maxStep = 0.12; // ~7 degrees per compass frame max
               final clampedDiff = diff.clamp(-maxStep, maxStep);
 
               _currentHeadingRadians = _normalizeAngle(_currentHeadingRadians + clampedDiff);
@@ -132,8 +133,6 @@ class NativeArPositionProvider implements PositionProvider {
           _lastGyroTime = now;
 
           if (dt > 0.001 && dt < 0.2) {
-            // Gyro Z axis is rotation around phone screen normal in portrait
-            // Integrate gyro angular velocity for instantaneous responsive turn
             final gyroDelta = -event.z * dt;
             if (gyroDelta.abs() > 0.002) {
               _currentHeadingRadians = _normalizeAngle(_currentHeadingRadians + gyroDelta);
@@ -148,7 +147,7 @@ class NativeArPositionProvider implements PositionProvider {
 
   void _initStepDetection() {
     try {
-      // 1. User linear acceleration (gravity already removed by OS)
+      // 1. User linear acceleration
       _accelSubscription = userAccelerometerEventStream().listen(
         (UserAccelerometerEvent event) {
           final rawMag = sqrt(event.x * event.x + event.y * event.y + event.z * event.z);
@@ -161,7 +160,7 @@ class NativeArPositionProvider implements PositionProvider {
             _stepPeak = true;
             _lastStepTime = now;
             _totalSteps++;
-            stepForward(0.65); // 65 cm per step
+            stepForward(defaultStepLengthM); // 70 cm per step
           } else if (_stepPeak && _filteredMag < _stepThresholdLow) {
             _stepPeak = false;
           }
@@ -270,6 +269,13 @@ class NativeArPositionProvider implements PositionProvider {
 
   void resetPosition() {
     _currentPosition = Vector3.zero();
+    _updateRotationFromSensors();
+  }
+
+  void resetSession() {
+    _currentPosition = Vector3.zero();
+    _totalSteps = 0;
+    _stepPeak = false;
     _updateRotationFromSensors();
   }
 

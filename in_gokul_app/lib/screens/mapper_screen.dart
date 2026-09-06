@@ -46,6 +46,7 @@ class _MapperScreenState extends State<MapperScreen>
     super.initState();
     _posProvider = NativeArPositionProvider();
     _posProvider.start();
+    _posProvider.resetSession();
 
     _poseSubscription = _posProvider.poseStream.listen((pose) {
       if (mounted) {
@@ -82,6 +83,31 @@ class _MapperScreenState extends State<MapperScreen>
 
   void _addNode() {
     final pos = _posProvider.currentPose.position;
+
+    // ENFORCE MINIMUM DISTANCE: Do not allow dropping nodes closer than 2.0m
+    if (_nodes.isNotEmpty) {
+      final lastNode = _nodes.last;
+      final dx = pos.x - lastNode.x;
+      final dz = pos.z - lastNode.z;
+      final distFromLast = sqrt(dx * dx + dz * dz);
+
+      if (distFromLast < 2.0) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '⚠️ Walk at least 2.0m before dropping the next node! (Currently ${distFromLast.toStringAsFixed(1)}m away)',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            backgroundColor: AppColors.warning,
+            duration: const Duration(milliseconds: 1800),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+    }
+
     final id = _nodes.isEmpty ? 0 : _nodes.last.id + 1;
     final name = id == 0
         ? '🚪 Entrance'
@@ -89,14 +115,18 @@ class _MapperScreenState extends State<MapperScreen>
             ? 'Waypoint 1'
             : 'Waypoint $id';
 
+    debugPrint(
+        'DEBUG MAPPER -> Steps: ${_posProvider.totalSteps} | Dropped Node: $name at (${pos.x.toStringAsFixed(2)}, ${pos.z.toStringAsFixed(2)})');
+
     setState(() {
       _nodes.add(Node(id: id, name: name, x: pos.x, y: pos.y, z: pos.z));
     });
 
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('📍 $name added at (${pos.x.toStringAsFixed(1)}, ${pos.z.toStringAsFixed(1)})'),
-        duration: const Duration(milliseconds: 900),
+        duration: const Duration(milliseconds: 1000),
         backgroundColor: AppColors.primaryBlue,
         behavior: SnackBarBehavior.floating,
       ),
@@ -409,24 +439,65 @@ class _MapperScreenState extends State<MapperScreen>
   }
 
   Widget _buildStatusBanner() {
+    final curPos = _posProvider.currentPose.position;
+    double distFromLast = 0.0;
+    bool canDrop = false;
+
+    if (_nodes.isNotEmpty) {
+      final lastNode = _nodes.last;
+      final dx = curPos.x - lastNode.x;
+      final dz = curPos.z - lastNode.z;
+      distFromLast = sqrt(dx * dx + dz * dz);
+      canDrop = distFromLast >= 2.0;
+    } else {
+      canDrop = true;
+    }
+
+    final bannerBg = _nodes.isEmpty
+        ? AppColors.softBlue
+        : canDrop
+            ? const Color(0xFFDCFCE7) // Soft Green
+            : const Color(0xFFFEF3C7); // Soft Amber
+
+    final bannerBorder = _nodes.isEmpty
+        ? AppColors.softBlueBorder
+        : canDrop
+            ? const Color(0xFF86EFAC)
+            : const Color(0xFFFCD34D);
+
+    final iconColor = _nodes.isEmpty
+        ? AppColors.primaryBlue
+        : canDrop
+            ? const Color(0xFF16A34A)
+            : const Color(0xFFD97706);
+
+    final text = _nodes.isEmpty
+        ? 'Stand at entrance and tap ➕ to drop Entrance Node.'
+        : canDrop
+            ? '✅ Ready to drop node (${distFromLast.toStringAsFixed(1)} m from last node)'
+            : '🚶 Walk ${(2.0 - distFromLast).toStringAsFixed(1)} m more to drop next node (${distFromLast.toStringAsFixed(1)} m / 2.0 m)';
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: AppColors.softBlue,
+        color: bannerBg,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.softBlueBorder),
+        border: Border.all(color: bannerBorder),
       ),
       child: Row(
         children: [
-          const Icon(Icons.my_location_rounded, color: AppColors.primaryBlue, size: 18),
+          Icon(canDrop ? Icons.check_circle_rounded : Icons.directions_walk_rounded,
+              color: iconColor, size: 18),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              _nodes.isEmpty
-                  ? 'Stand at entrance and tap ➕ to drop Node 0.'
-                  : '${_nodes.length} nodes mapped · ${_buildEdges().length ~/ 2} corridor edges',
-              style: const TextStyle(color: AppColors.primaryBlue, fontSize: 12, fontWeight: FontWeight.w600),
+              text,
+              style: TextStyle(
+                color: iconColor,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],

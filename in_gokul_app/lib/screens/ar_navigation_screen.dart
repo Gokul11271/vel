@@ -50,6 +50,12 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
   bool _isCalibrationSheetOpen = false;
   bool _showDebug = kDebugMode;
 
+  // --- Heading smoothing & turn state hysteresis ---
+  double _smoothedBearing = 0.0;
+  bool _isUTurnActive = false;
+  int _uTurnDebounceTicks = 0;
+  int _normalDebounceTicks = 0;
+
   @override
   void initState() {
     super.initState();
@@ -229,9 +235,25 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
     List<Node> path,
     int stepIndex,
   ) {
-    // If user is facing completely the wrong way (> 125 degrees off-axis)
-    final relativeDeg = bearRad * (180.0 / pi);
-    if (relativeDeg.abs() > 125) {
+    _smoothedBearing = 0.75 * _smoothedBearing + 0.25 * bearRad;
+    final relativeDeg = _smoothedBearing * (180.0 / pi);
+
+    // Hysteresis buffer for U-Turn detection
+    if (relativeDeg.abs() > 135.0) {
+      _uTurnDebounceTicks++;
+      _normalDebounceTicks = 0;
+      if (_uTurnDebounceTicks >= 8) {
+        _isUTurnActive = true;
+      }
+    } else if (relativeDeg.abs() < 115.0) {
+      _normalDebounceTicks++;
+      _uTurnDebounceTicks = 0;
+      if (_normalDebounceTicks >= 5) {
+        _isUTurnActive = false;
+      }
+    }
+
+    if (_isUTurnActive) {
       return '🔄 Turn around  —  path is behind you';
     }
 
@@ -301,8 +323,7 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
     List<Node> path,
     int stepIndex,
   ) {
-    final relativeDeg = bearRad * (180.0 / pi);
-    if (relativeDeg.abs() > 125) {
+    if (_isUTurnActive) {
       return Icons.u_turn_left_rounded;
     }
 
@@ -335,6 +356,7 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
       }
     }
 
+    final relativeDeg = _smoothedBearing * (180.0 / pi);
     if (relativeDeg < -20 && relativeDeg > -65) return Icons.turn_slight_left_rounded;
     if (relativeDeg <= -65) return Icons.turn_left_rounded;
     if (relativeDeg > 20 && relativeDeg < 65) return Icons.turn_slight_right_rounded;
@@ -1000,7 +1022,7 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
                   },
                 ),
 
-              // ── 10. Debug Overlay ─────────────────────────────────────────
+              // ── 10. Diagnostics Debug Overlay ─────────────────────────────
               if (_showDebug)
                 DebugOverlay(
                   trackingState: trackingState,
@@ -1009,6 +1031,9 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
                   distanceToNext: distNext,
                   userPose: userPose,
                   fpsCounter: _fpsCounter,
+                  segmentProgress: widget.controller.currentSegmentProgress,
+                  arrivalFrames: widget.controller.consecutiveArrivalFrames,
+                  snappedPosition: widget.controller.snappedJsonPosition,
                 ),
             ],
           ),

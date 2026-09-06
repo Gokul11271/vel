@@ -69,6 +69,7 @@ void main() {
         alignmentService: alignmentService,
         waypointArrivalThreshold: 0.8,
         destinationArrivalThreshold: 1.5,
+        arrivalFrameThreshold: 1,
       );
 
       await positionProvider.start();
@@ -84,15 +85,15 @@ void main() {
       expect(controller.currentNode?.id, equals(1));
       expect(controller.nextTargetNode?.id, equals(2));
 
-      // Step towards waypoint (N2 at z = -2)
-      positionProvider.setPosition(x: 0, y: 0, z: -1.3); // Within 0.8m of N2 (dist = 0.7m)
+      // Step towards waypoint (N2 at z = -2, 90% along leg)
+      positionProvider.setPosition(x: 0, y: 0, z: -1.8);
       await Future.delayed(const Duration(milliseconds: 10));
 
       expect(controller.currentNode?.id, equals(2));
       expect(controller.nextTargetNode?.id, equals(3));
 
-      // Step towards destination (N3 at z = -5)
-      positionProvider.setPosition(x: 0, y: 0, z: -3.8); // Within 1.5m adaptive destination threshold (dist = 1.2m)
+      // Step towards destination (N3 at z = -5, 93% along leg)
+      positionProvider.setPosition(x: 0, y: 0, z: -4.8);
       await Future.delayed(const Duration(milliseconds: 10));
 
       expect(controller.state, equals(NavigationState.destinationReached));

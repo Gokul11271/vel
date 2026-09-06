@@ -52,6 +52,9 @@ class NavigationController extends ChangeNotifier {
   bool _isInsideCorridor = true;
   double _distanceToCorridorCenterline = 0.0;
 
+  /// Number of consecutive frames required at arrival threshold before advancing.
+  final int arrivalFrameThreshold;
+
   /// Optional graph for re-routing. Set after construction or in constructor.
   Graph? graph;
 
@@ -65,6 +68,7 @@ class NavigationController extends ChangeNotifier {
     this.corridorWidthM = MapMatcher.defaultCorridorWidthM,
     this.waypointArrivalThreshold = 1.2,
     this.destinationArrivalThreshold = 1.2,
+    this.arrivalFrameThreshold = 15,
     this.graph,
     this.onRouteRecalculated,
   }) : path = List.from(routeResult.path) {
@@ -87,6 +91,9 @@ class NavigationController extends ChangeNotifier {
 
   /// Aliased for backward compatibility with existing HUD callers.
   Pose get latestPose => _latestPose;
+
+  /// Corridor-snapped JSON position.
+  Vector3? get snappedJsonPosition => _snappedJsonPosition;
 
   /// Corridor-snapped navigation pose (for waypoint progression & distance calculations).
   Pose get navigationPose {
@@ -213,70 +220,87 @@ class NavigationController extends ChangeNotifier {
       _state = NavigationState.navigating;
     }
 
-    if (_state == NavigationState.navigating) {
-      // 1. Check if user went directly to final destination (skipping nodes)
-      _checkDirectDestination();
-
-      // 2. Check normal waypoint progression
+    if (_state == NavigationState.navigating || _state == NavigationState.waypointReached) {
+      if (_state == NavigationState.waypointReached) {
+        _state = NavigationState.navigating;
+      }
+      // Check waypoint progression with segment progress and frame debounce
       _checkWaypointProgression();
 
-      // 3. Off-route detection and auto-reroute
+      // Off-route detection and auto-reroute
       _checkOffRoute();
     }
 
     notifyListeners();
   }
 
-  /// Always check proximity to the final destination, regardless of which
-  /// step we're on.
-  void _checkDirectDestination() {
-    if (path.isEmpty || _state == NavigationState.destinationReached) return;
+  int _consecutiveArrivalFrames = 0;
+  int get consecutiveArrivalFrames => _consecutiveArrivalFrames;
 
-    if (path.length > 2 && _currentStepIndex == 0) {
-      return;
-    }
+  /// Calculates orthogonal projection progress t along segment A -> B.
+  /// t = 0.0 means at start node A, t = 1.0 means at target node B.
+  double calculateSegmentProgress(Vector3 userJsonPos, Node a, Node b) {
+    final dx = b.x - a.x;
+    final dz = b.z - a.z;
+    final lenSq = dx * dx + dz * dz;
+    if (lenSq < 1e-4) return 1.0;
+    return (((userJsonPos.x - a.x) * dx) + ((userJsonPos.z - a.z) * dz)) / lenSq;
+  }
 
-    final destination = path.last;
-    final effectivePos = snappedWorldPosition;
-    final destDist =
-        alignmentService.getDistanceToNode(effectivePos, destination);
-
-    if (destDist <= destinationArrivalThreshold) {
-      _currentStepIndex = path.length - 1;
-      _state = NavigationState.destinationReached;
-      notifyListeners();
-    }
+  /// Current segment progress t along active corridor leg [0.0 to 1.0].
+  double get currentSegmentProgress {
+    final start = currentNode;
+    final target = nextTargetNode;
+    if (start == null || target == null) return 1.0;
+    final rawJsonPos = alignmentService.transformWorldToJson(_latestPose.position);
+    return calculateSegmentProgress(rawJsonPos, start, target);
   }
 
   void _checkWaypointProgression() {
-    final target = nextTargetNode;
-    if (target == null) {
-      _state = NavigationState.destinationReached;
-      return;
-    }
+    if (path.isEmpty || _currentStepIndex >= path.length - 1) return;
 
-    final isLastLeg = _currentStepIndex == path.length - 2;
-    final threshold =
-        isLastLeg ? destinationArrivalThreshold : waypointArrivalThreshold;
+    final start = currentNode;
+    final target = nextTargetNode;
+    if (start == null || target == null) return;
+
+    final isLastLeg = (_currentStepIndex == path.length - 2);
+    final rawJsonPos = alignmentService.transformWorldToJson(_latestPose.position);
+    final progress = calculateSegmentProgress(rawJsonPos, start, target);
     final effectivePos = snappedWorldPosition;
     final dist = alignmentService.getDistanceToNode(effectivePos, target);
 
-    if (dist <= threshold) {
-      _currentStepIndex++;
-      _offRouteFrames = 0;
+    final threshold = isLastLeg ? destinationArrivalThreshold : waypointArrivalThreshold;
+    final isCloseEnough = dist <= threshold;
+    final hasProgressed = progress >= 0.85;
 
-      if (_currentStepIndex >= path.length - 1) {
-        _state = NavigationState.destinationReached;
-      } else {
-        _state = NavigationState.waypointReached;
-        Future.microtask(() {
-          if (_state == NavigationState.waypointReached) {
-            _state = NavigationState.navigating;
-            notifyListeners();
-          }
-        });
+    // STRICT MULTI-CONDITION ARRIVAL:
+    // 1. Proximity threshold (dist <= 0.8m - 1.2m)
+    // 2. User has walked at least 85% of active corridor segment
+    // 3. User remains stable for 15 consecutive frames (~0.75s)
+    if (isCloseEnough && hasProgressed) {
+      _consecutiveArrivalFrames++;
+      if (_consecutiveArrivalFrames >= arrivalFrameThreshold) {
+        _consecutiveArrivalFrames = 0;
+        _currentStepIndex++;
+        _offRouteFrames = 0;
+
+        if (_currentStepIndex >= path.length - 1) {
+          _state = NavigationState.destinationReached;
+        } else {
+          _state = NavigationState.waypointReached;
+          Future.delayed(const Duration(milliseconds: 600), () {
+            if (_state == NavigationState.waypointReached) {
+              _state = NavigationState.navigating;
+              notifyListeners();
+            }
+          });
+        }
+        notifyListeners();
       }
-      notifyListeners();
+    } else {
+      if (_consecutiveArrivalFrames > 0) {
+        _consecutiveArrivalFrames--;
+      }
     }
   }
 

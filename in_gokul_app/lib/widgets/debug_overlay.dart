@@ -1,22 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:vector_math/vector_math_64.dart' hide Colors;
 import '../models/pose.dart';
 import '../models/node.dart';
 import 'fps_counter.dart';
 
 /// Developer debug overlay displayed on top of the AR camera feed.
-/// Shows live telemetry: tracking state, nodes, distance, FPS, XYZ position.
-///
-/// Usage:
-/// ```dart
-/// DebugOverlay(
-///   trackingState: TrackingState.good,
-///   currentNode: n1,
-///   nextNode: n2,
-///   distanceToNext: 2.14,
-///   userPose: pose,
-///   fpsCounter: _fpsCounter,
-/// )
-/// ```
+/// Shows live telemetry: tracking state, nodes, distance, segment progress, FPS, XYZ position.
 class DebugOverlay extends StatelessWidget {
   final TrackingState trackingState;
   final Node? currentNode;
@@ -24,6 +13,9 @@ class DebugOverlay extends StatelessWidget {
   final double distanceToNext;
   final Pose userPose;
   final FpsCounter fpsCounter;
+  final double segmentProgress;
+  final int arrivalFrames;
+  final Vector3? snappedPosition;
 
   const DebugOverlay({
     super.key,
@@ -33,6 +25,9 @@ class DebugOverlay extends StatelessWidget {
     required this.distanceToNext,
     required this.userPose,
     required this.fpsCounter,
+    this.segmentProgress = 0.0,
+    this.arrivalFrames = 0,
+    this.snappedPosition,
   });
 
   @override
@@ -56,24 +51,26 @@ class DebugOverlay extends StatelessWidget {
                 ? 'LOST'
                 : 'N/A';
 
+    final progressPct = (segmentProgress * 100).clamp(0, 100);
+
     return Align(
       alignment: Alignment.topRight,
       child: Padding(
-        padding: const EdgeInsets.only(top: 90, right: 12),
+        padding: const EdgeInsets.only(top: 86, right: 10),
         child: Container(
-          width: 185,
+          width: 195,
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.82),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white12),
+            color: Colors.black.withValues(alpha: 0.86),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.white24),
           ),
           child: DefaultTextStyle(
             style: const TextStyle(
-              fontSize: 11,
+              fontSize: 10.5,
               fontFamily: 'monospace',
               color: Colors.white70,
-              height: 1.6,
+              height: 1.5,
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -82,26 +79,26 @@ class DebugOverlay extends StatelessWidget {
                 // Header
                 Row(
                   children: [
-                    const Icon(Icons.bug_report_rounded, size: 12, color: Colors.white38),
+                    const Icon(Icons.bug_report_rounded, size: 12, color: Colors.amberAccent),
                     const SizedBox(width: 4),
-                    const Text('DEBUG', style: TextStyle(color: Colors.white38, fontSize: 10, letterSpacing: 1.5)),
+                    const Text('DIAGNOSTICS', style: TextStyle(color: Colors.amberAccent, fontSize: 10, letterSpacing: 1.2, fontWeight: FontWeight.bold)),
                     const Spacer(),
                     Text(
                       '${fps.toStringAsFixed(0)} FPS',
                       style: TextStyle(
                         color: fps >= 45 ? Colors.greenAccent : fps >= 25 ? Colors.amberAccent : Colors.redAccent,
                         fontWeight: FontWeight.bold,
-                        fontSize: 11,
+                        fontSize: 10,
                       ),
                     ),
                   ],
                 ),
-                const Divider(color: Colors.white12, height: 8),
+                const Divider(color: Colors.white24, height: 6),
 
                 // Tracking
                 Row(
                   children: [
-                    Text('Tracking: ', style: const TextStyle(color: Colors.white54)),
+                    const Text('Tracking: ', style: TextStyle(color: Colors.white54)),
                     Text(
                       trackingLabel,
                       style: TextStyle(color: trackingColor, fontWeight: FontWeight.bold),
@@ -109,18 +106,20 @@ class DebugOverlay extends StatelessWidget {
                   ],
                 ),
 
-                // Nodes
+                // Nodes & Progression
                 _row('Current', currentNode?.name ?? '--'),
                 _row('Next', nextNode?.name ?? '--'),
                 _row('Distance', '${distanceToNext.toStringAsFixed(2)} m'),
+                _row('Progress t', '${progressPct.toStringAsFixed(0)}%'),
+                _row('Arrival Lock', '$arrivalFrames/15'),
 
-                const Divider(color: Colors.white12, height: 8),
+                const Divider(color: Colors.white24, height: 6),
 
-                // Camera / position
-                const Text('Camera:', style: TextStyle(color: Colors.white54)),
-                _row('  X', pos.x.toStringAsFixed(2)),
-                _row('  Y', pos.y.toStringAsFixed(2)),
-                _row('  Z', pos.z.toStringAsFixed(2)),
+                // Raw vs Snapped Coordinates
+                const Text('User Pos (m):', style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold)),
+                _row('  Raw X/Z', '(${pos.x.toStringAsFixed(1)}, ${pos.z.toStringAsFixed(1)})'),
+                if (snappedPosition != null)
+                  _row('  Snap X/Z', '(${snappedPosition!.x.toStringAsFixed(1)}, ${snappedPosition!.z.toStringAsFixed(1)})'),
                 _row('  Yaw', '${yaw.toStringAsFixed(1)}°'),
               ],
             ),
