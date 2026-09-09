@@ -93,7 +93,11 @@ class BreadcrumbPainter extends CustomPainter {
 
       // Perspective projection
       final screenX = centerX + (camX * focalX) / depth;
-      final screenY = centerY - (camY * focalY) / depth;
+      final rawScreenY = centerY - (camY * focalY) / depth;
+
+      // Horizon pitch clipping: clamp so floor elements stay locked to floor level
+      final double maxHorizonY = size.height * 0.35;
+      final double screenY = rawScreenY.clamp(maxHorizonY, size.height * 1.05);
 
       final isLast = (i == breadcrumbs.length - 1);
 

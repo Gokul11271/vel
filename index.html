@@ -1,10 +1,31 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Node Creator</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Indoor Navigation Editor</title>
 
-    <link rel="stylesheet" href="style.css">
+    <style>
+        body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
+        #toolbar {
+            position: absolute; top: 20px; left: 20px; width: 220px;
+            padding: 15px; background: white; border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.2); z-index: 100;
+        }
+        #toolbar h3 { margin-top: 0; }
+        #toolbar label { display: block; margin-top: 10px; font-weight: bold; }
+        #toolbar input, #toolbar select { width: 100%; padding: 8px; margin-top: 5px; box-sizing: border-box; }
+        #connectBtn {
+            width: 100%; margin-top: 15px; padding: 10px; cursor: pointer;
+            background-color: #eee; border: 1px solid #ccc; font-weight: bold; border-radius: 4px;
+        }
+        #connectBtn.active { background-color: #ffaa00; color: #000; border-color: #d48800; }
+        #downloadBtn {
+            width: 100%; margin-top: 10px; padding: 10px; cursor: pointer;
+            background-color: #007bff; color: white; border: none; font-weight: bold; border-radius: 4px;
+        }
+        #downloadBtn:hover { background-color: #0056b3; }
+    </style>
 
     <script type="importmap">
     {
@@ -17,9 +38,201 @@
 </head>
 <body>
 
-<button id="downloadBtn">Download JSON</button>
+<div id="toolbar">
+    <h3>Navigation Editor</h3>
+    <label for="nodeName">Node Name</label>
+    <input id="nodeName" type="text" placeholder="Enter node name">
 
-<script type="module" src="main.js"></script>
+    <label for="nodeType">Node Type</label>
+    <select id="nodeType">
+        <option value="start">🟢 Start</option>
+        <option value="waypoint" selected>🔵 Waypoint</option>
+        <option value="destination">🔴 Destination</option>
+    </select>
+
+    <button id="connectBtn">Connect Mode: OFF</button>
+    <button id="downloadBtn">Download JSON</button>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+let scene, camera, renderer, controls, model;
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+const nodes = [];
+const nodeMarkers = [];
+const edges = [];
+let connectMode = false;
+let selectedNode = null;
+
+const TYPE_COLORS = {
+    start: 0x00ff00,
+    waypoint: 0x0088ff,
+    destination: 0xff0000
+};
+
+init();
+animate();
+
+function init() {
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xf0f0f0);
+
+    camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(5, 5, 10);
+
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    controls = new OrbitControls(camera, renderer.domElement);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 1.5));
+    const light = new THREE.DirectionalLight(0xffffff, 2);
+    light.position.set(5, 10, 5);
+    scene.add(light);
+
+    scene.add(new THREE.GridHelper(100, 100));
+
+    const loader = new GLTFLoader();
+    loader.load("model/sample1.glb", (gltf) => {
+        model = gltf.scene;
+        scene.add(model);
+    }, undefined, (err) => console.error(err));
+
+    window.addEventListener("click", onMouseClick);
+    window.addEventListener("resize", onResize);
+
+    const connectBtn = document.getElementById("connectBtn");
+    connectBtn.addEventListener("click", () => {
+        connectMode = !connectMode;
+        if (selectedNode) {
+            selectedNode.material.emissive.setHex(0x000000);
+            selectedNode = null;
+        }
+        connectBtn.innerText = connectMode ? "Connect Mode: ON" : "Connect Mode: OFF";
+        connectBtn.classList.toggle("active", connectMode);
+    });
+
+    document.getElementById("downloadBtn").addEventListener("click", downloadJSON);
+}
+
+function onMouseClick(event) {
+    if (event.target.closest("#toolbar")) return;
+
+    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+
+    if (connectMode) {
+        const markerHits = raycaster.intersectObjects(nodeMarkers);
+        if (markerHits.length > 0) {
+            const clickedMarker = markerHits[0].object;
+
+            if (!selectedNode) {
+                selectedNode = clickedMarker;
+                selectedNode.material.emissive.setHex(0xffff00);
+                return;
+            }
+
+            if (selectedNode === clickedMarker) {
+                selectedNode.material.emissive.setHex(0x000000);
+                selectedNode = null;
+                return;
+            }
+
+            createEdge(selectedNode, clickedMarker);
+            selectedNode.material.emissive.setHex(0x000000);
+            selectedNode = null;
+        }
+        return;
+    }
+
+    if (!model) return;
+    const intersects = raycaster.intersectObject(model, true);
+    if (intersects.length === 0) return;
+
+    const point = intersects[0].point;
+    const nameInput = document.getElementById("nodeName").value.trim();
+    const type = document.getElementById("nodeType").value;
+    const nodeId = "N" + (nodes.length + 1);
+    const nodeName = nameInput || (type.charAt(0).toUpperCase() + type.slice(1) + " " + (nodes.length + 1));
+    const markerColor = TYPE_COLORS[type] || 0x0088ff;
+
+    const marker = new THREE.Mesh(
+        new THREE.SphereGeometry(0.12, 16, 16),
+        new THREE.MeshStandardMaterial({ color: markerColor, roughness: 0.3, metalness: 0.1 })
+    );
+    marker.position.copy(point);
+
+    marker.userData = { id: nodeId, name: nodeName, type: type };
+    scene.add(marker);
+    nodeMarkers.push(marker);
+
+    nodes.push({
+        id: nodeId,
+        name: nodeName,
+        type: type,
+        position: {
+            x: Number(point.x.toFixed(3)),
+            y: Number(point.y.toFixed(3)),
+            z: Number(point.z.toFixed(3))
+        }
+    });
+
+    document.getElementById("nodeName").value = "";
+}
+
+function createEdge(nodeA, nodeB) {
+    const fromId = nodeA.userData.id;
+    const toId = nodeB.userData.id;
+
+    const exists = edges.some(e => 
+        (e.from === fromId && e.to === toId) || 
+        (e.from === toId && e.to === fromId)
+    );
+    if (exists) return;
+
+    const geometry = new THREE.BufferGeometry().setFromPoints([nodeA.position, nodeB.position]);
+    const material = new THREE.LineBasicMaterial({ color: 0xffff00, linewidth: 3 });
+    scene.add(new THREE.Line(geometry, material));
+
+    edges.push({
+        from: fromId,
+        to: toId,
+        distance: Number(nodeA.position.distanceTo(nodeB.position).toFixed(2))
+    });
+}
+
+function downloadJSON() {
+    const data = { nodes: nodes, edges: edges };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "navigation.json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+}
+
+function onResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+}
+</script>
 
 </body>
 </html>

@@ -171,6 +171,18 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
 
     if (widget.controller.state == NavigationState.waypointReached) {
       _flashController.forward(from: 0.0);
+      final nextNode = widget.controller.nextTargetNode;
+      if (nextNode != null && mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Reached intermediate waypoint — continuing to ${nextNode.name}'),
+            duration: const Duration(milliseconds: 1400),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: AppColors.primaryBlue.withValues(alpha: 0.85),
+          ),
+        );
+      }
     }
 
     if (widget.controller.state == NavigationState.destinationReached &&
@@ -964,9 +976,10 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
                   ),
                 ),
 
-              // ── 9. Destination Glow (within 5 m of final destination) ─────
+              // ── 9. Destination Glow (only on final leg within 1.5 m of destination) ─────
               if (widget.controller.finalDestination != null &&
-                  distTotal <= 5.0 &&
+                  widget.controller.currentStepIndex >= widget.controller.path.length - 2 &&
+                  distTotal <= 1.5 &&
                   widget.controller.state != NavigationState.destinationReached)
                 AnimatedBuilder(
                   animation: _pulseController,
@@ -1034,6 +1047,11 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
                   segmentProgress: widget.controller.currentSegmentProgress,
                   arrivalFrames: widget.controller.consecutiveArrivalFrames,
                   snappedPosition: widget.controller.snappedJsonPosition,
+                  onManualStep: () {
+                    if (widget.controller.positionProvider is NativeArPositionProvider) {
+                      (widget.controller.positionProvider as NativeArPositionProvider).manualStep();
+                    }
+                  },
                 ),
             ],
           ),

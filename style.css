@@ -1,17 +1,69 @@
-body{
-    margin:0;
-    overflow:hidden;
+body {
+    margin: 0;
+    overflow: hidden;
+    font-family: Arial, Helvetica, sans-serif;
 }
 
-#downloadBtn{
+#toolbar {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    width: 220px;
+    padding: 15px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+    z-index: 100;
+}
 
-    position:absolute;
-    top:20px;
-    left:20px;
+#toolbar h3 {
+    margin-top: 0;
+}
 
-    padding:10px 20px;
+#toolbar label {
+    display: block;
+    margin-top: 10px;
+    font-weight: bold;
+}
 
-    font-size:16px;
+#toolbar input,
+#toolbar select {
+    width: 100%;
+    padding: 8px;
+    margin-top: 5px;
+    box-sizing: border-box;
+}
 
-    z-index:100;
+#connectBtn {
+    width: 100%;
+    margin-top: 15px;
+    padding: 10px;
+    cursor: pointer;
+    background-color: #f0f0f0;
+    border: 1px solid #ccc;
+    font-weight: bold;
+    border-radius: 4px;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+#connectBtn.active {
+    background-color: #ffaa00;
+    color: #000;
+    border-color: #d48800;
+}
+
+#downloadBtn {
+    width: 100%;
+    margin-top: 10px;
+    padding: 10px;
+    cursor: pointer;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    font-weight: bold;
+    border-radius: 4px;
+}
+
+#downloadBtn:hover {
+    background-color: #0056b3;
 }

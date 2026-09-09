@@ -36,12 +36,15 @@ class NativeArPositionProvider implements PositionProvider {
   double _pitchRadians = 0.0;
   double _filteredMag = 0.0;
 
-  // --- Step detection hysteresis (tuned for natural handheld indoor walking) ---
+  // --- Multi-sensor Step detection hysteresis ---
   bool _stepPeak = false;
-  static const double _stepThresholdHigh = 0.32; // Peak dynamic acceleration (m/s²)
-  static const double _stepThresholdLow = 0.12;  // Reset threshold (m/s²)
-  static const int _stepMinIntervalMs = 280;     // Min time between steps (~3.5 steps/sec max)
+  static const double _stepThresholdHigh = 0.15; // Low threshold for maximum physical walking sensitivity (m/s²)
+  static const double _stepThresholdLow = 0.06;  // Hysteresis reset (m/s²)
+  static const int _stepMinIntervalMs = 250;     // Min time between steps (~4 steps/sec max)
   static const double defaultStepLengthM = 0.70; // 70 cm per adult stride
+
+  StreamSubscription? _userAccelSubscription;
+  StreamSubscription? _rawAccelSubscription;
 
   int _totalSteps = 0;
   int get totalSteps => _totalSteps;
@@ -68,11 +71,8 @@ class NativeArPositionProvider implements PositionProvider {
     // 2. Gyroscope assistance for smooth relative turning
     _initGyroscopeTracking();
 
-    // 3. Accelerometer: step detection + pitch estimation
+    // 3. Multi-sensor step detection + pitch estimation
     _initStepDetection();
-
-    // 4. Optional native AR session
-    _initNativeARSession();
 
     _emitCurrentPose();
   }
@@ -145,72 +145,51 @@ class NativeArPositionProvider implements PositionProvider {
     } catch (_) {}
   }
 
+  void _registerStep(String source) {
+    _totalSteps++;
+    stepForward(defaultStepLengthM);
+  }
+
+  void _processAccelMagnitude(double mag) {
+    _filteredMag = 0.45 * mag + 0.55 * _filteredMag;
+    final now = DateTime.now();
+    if (!_stepPeak &&
+        _filteredMag > _stepThresholdHigh &&
+        now.difference(_lastStepTime).inMilliseconds > _stepMinIntervalMs) {
+      _stepPeak = true;
+      _lastStepTime = now;
+      _registerStep('accelerometer');
+    } else if (_stepPeak && _filteredMag < _stepThresholdLow) {
+      _stepPeak = false;
+    }
+  }
+
   void _initStepDetection() {
+
     try {
-      // 1. User linear acceleration
-      _accelSubscription = userAccelerometerEventStream().listen(
+      // 2. User Linear Acceleration (Gravity-removed vector)
+      _userAccelSubscription = userAccelerometerEventStream().listen(
         (UserAccelerometerEvent event) {
-          final rawMag = sqrt(event.x * event.x + event.y * event.y + event.z * event.z);
-          _filteredMag = 0.35 * rawMag + 0.65 * _filteredMag;
-
-          final now = DateTime.now();
-          if (!_stepPeak &&
-              _filteredMag > _stepThresholdHigh &&
-              now.difference(_lastStepTime).inMilliseconds > _stepMinIntervalMs) {
-            _stepPeak = true;
-            _lastStepTime = now;
-            _totalSteps++;
-            stepForward(defaultStepLengthM); // 70 cm per step
-          } else if (_stepPeak && _filteredMag < _stepThresholdLow) {
-            _stepPeak = false;
-          }
-        },
-        onError: (_) {},
-      );
-
-      // 2. Gravity vector for device pitch estimation
-      accelerometerEventStream().listen(
-        (AccelerometerEvent event) {
-          final gMag = sqrt(event.x * event.x + event.y * event.y + event.z * event.z);
-          if (gMag > 1.0) {
-            _pitchRadians = asin((event.y / gMag).clamp(-1.0, 1.0));
-          }
+          final userMag = sqrt(event.x * event.x + event.y * event.y + event.z * event.z);
+          _processAccelMagnitude(userMag);
         },
         onError: (_) {},
       );
     } catch (_) {}
-  }
 
-  void _initNativeARSession() {
     try {
-      _methodChannel.invokeMethod('startArSession');
-      _platformSubscription =
-          _poseEventChannel.receiveBroadcastStream().listen(
-        (data) {
-          if (data is Map) {
-            final x = (data['x'] as num?)?.toDouble() ?? 0.0;
-            final y = (data['y'] as num?)?.toDouble() ?? 0.0;
-            final z = (data['z'] as num?)?.toDouble() ?? 0.0;
-            final qx = (data['qx'] as num?)?.toDouble() ?? 0.0;
-            final qy = (data['qy'] as num?)?.toDouble() ?? 0.0;
-            final qz = (data['qz'] as num?)?.toDouble() ?? 0.0;
-            final qw = (data['qw'] as num?)?.toDouble() ?? 1.0;
-            final stateIndex = data['state'] as int? ?? 0;
-            final accuracy = (data['accuracy'] as num?)?.toDouble() ?? 0.05;
+      // 3. Raw Accelerometer (Gravity Vector & Dynamic Peak Detection)
+      _rawAccelSubscription = accelerometerEventStream().listen(
+        (AccelerometerEvent event) {
+          final rawMag = sqrt(event.x * event.x + event.y * event.y + event.z * event.z);
 
-            final state = stateIndex >= 0 && stateIndex < TrackingState.values.length
-                ? TrackingState.values[stateIndex]
-                : TrackingState.good;
+          // Dynamic deviation from gravity (~9.80665 m/s²)
+          final dynamicMag = (rawMag - 9.80665).abs();
+          _processAccelMagnitude(dynamicMag);
 
-            _currentPosition = Vector3(x, y, z);
-            final rot = Quaternion(qx, qy, qz, qw);
-            _currentPose = Pose(
-              position: _currentPosition.clone(),
-              rotation: rot,
-              trackingState: state,
-              accuracy: accuracy,
-            );
-            _poseController.add(_currentPose);
+          // Pitch estimation
+          if (rawMag > 1.0) {
+            _pitchRadians = asin((event.y / rawMag).clamp(-1.0, 1.0));
           }
         },
         onError: (_) {},
@@ -246,6 +225,12 @@ class NativeArPositionProvider implements PositionProvider {
     _currentPosition.x += dx;
     _currentPosition.z += dz;
     _updateRotationFromSensors();
+  }
+
+  /// Manual step for testing, indoor desk calibration, or walking simulation
+  void manualStep({double stepMeters = defaultStepLengthM}) {
+    _totalSteps++;
+    stepForward(stepMeters);
   }
 
   /// Steps towards a specified world target coordinate
@@ -291,14 +276,15 @@ class NativeArPositionProvider implements PositionProvider {
     await _platformSubscription?.cancel();
     await _compassSubscription?.cancel();
     await _gyroSubscription?.cancel();
+    await _userAccelSubscription?.cancel();
+    await _rawAccelSubscription?.cancel();
     await _accelSubscription?.cancel();
     _platformSubscription = null;
     _compassSubscription = null;
     _gyroSubscription = null;
+    _userAccelSubscription = null;
+    _rawAccelSubscription = null;
     _accelSubscription = null;
-    try {
-      await _methodChannel.invokeMethod('stopArSession');
-    } catch (_) {}
   }
 
   @override

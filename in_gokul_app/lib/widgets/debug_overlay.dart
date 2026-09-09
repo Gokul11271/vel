@@ -17,6 +17,8 @@ class DebugOverlay extends StatelessWidget {
   final int arrivalFrames;
   final Vector3? snappedPosition;
 
+  final VoidCallback? onManualStep;
+
   const DebugOverlay({
     super.key,
     required this.trackingState,
@@ -28,6 +30,7 @@ class DebugOverlay extends StatelessWidget {
     this.segmentProgress = 0.0,
     this.arrivalFrames = 0,
     this.snappedPosition,
+    this.onManualStep,
   });
 
   @override
@@ -121,6 +124,22 @@ class DebugOverlay extends StatelessWidget {
                 if (snappedPosition != null)
                   _row('  Snap X/Z', '(${snappedPosition!.x.toStringAsFixed(1)}, ${snappedPosition!.z.toStringAsFixed(1)})'),
                 _row('  Yaw', '${yaw.toStringAsFixed(1)}°'),
+                if (onManualStep != null) ...[
+                  const SizedBox(height: 6),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blueAccent.withValues(alpha: 0.8),
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        minimumSize: const Size(0, 26),
+                      ),
+                      onPressed: onManualStep,
+                      icon: const Icon(Icons.directions_walk, size: 14, color: Colors.white),
+                      label: const Text('+ Step (+0.7m)', style: TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
