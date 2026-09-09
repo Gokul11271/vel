@@ -7,10 +7,13 @@ import '../models/node.dart';
 import '../models/edge.dart';
 import '../models/building_map.dart';
 import '../models/pose.dart';
+import '../models/ar_pose.dart';
 import '../services/json_service.dart';
+import '../services/android_ar_service.dart';
 import '../tracking/native_ar_position_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/qr_export_dialog.dart';
+import '../widgets/native_ar_view_widget.dart';
 
 /// Mobile Mapper Screen (Phase 7 Walkthrough Mapping Tool)
 /// Walk a corridor tapping "+" to drop nodes at your current position.
@@ -35,8 +38,13 @@ class _MapperScreenState extends State<MapperScreen>
   final List<Node> _nodes = [];
   final List<Vector3> _liveTrail = [];
   late final NativeArPositionProvider _posProvider;
+  final AndroidARService _arService = AndroidARService();
   StreamSubscription<Pose>? _poseSubscription;
+  StreamSubscription<ARPose>? _arPoseSubscription;
   bool _saving = false;
+  bool _isARMode = false;
+  bool _isARSupported = false;
+  int _placedAnchorCount = 0;
 
   late AnimationController _pulseCtrl;
   late Animation<double> _pulseAnim;
@@ -69,38 +77,125 @@ class _MapperScreenState extends State<MapperScreen>
     _pulseAnim = Tween<double>(begin: 0.90, end: 1.10).animate(
       CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
     );
+
+    _checkARSupport();
+  }
+
+  Future<void> _checkARSupport() async {
+    final supported = await _arService.isARSupported();
+    if (mounted) {
+      setState(() => _isARSupported = supported);
+    }
+  }
+
+  Future<void> _toggleARMode() async {
+    if (!_isARMode) {
+      final supported = await _arService.isARSupported();
+      if (!supported) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('⚠️ Google ARCore is not supported or not installed on this device.'),
+              backgroundColor: AppColors.warning,
+            ),
+          );
+        }
+        return;
+      }
+
+      final hasPerm = await _arService.checkCameraPermission() ||
+          await _arService.requestCameraPermission();
+      if (!hasPerm) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('⚠️ Camera permission is required for 3D AR Mapping.'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+        return;
+      }
+
+      final started = await _arService.startARSession();
+      if (!started) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('⚠️ Failed to start ARCore session.'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Sync existing nodes to ARCore anchors
+      for (final n in _nodes) {
+        await _arService.addNodeAnchor(n.x, n.y, n.z);
+      }
+      _syncARRouteRibbon();
+
+      if (mounted) {
+        setState(() => _isARMode = true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✨ 3D ARCore View Activated! Tapping "+" drops physical 3D beacons.'),
+            backgroundColor: AppColors.primaryBlue,
+            duration: Duration(milliseconds: 1600),
+          ),
+        );
+      }
+    } else {
+      await _arService.pauseARSession();
+      if (mounted) {
+        setState(() => _isARMode = false);
+      }
+    }
+  }
+
+  void _syncARRouteRibbon() {
+    if (!_isARMode) return;
+    final points = _nodes.map((n) => Vector3D(x: n.x, y: n.y, z: n.z)).toList();
+    final dest = points.isNotEmpty ? points.last : const Vector3D();
+    _arService.updateNavigationRoute(points, dest);
   }
 
   @override
   void dispose() {
     _poseSubscription?.cancel();
+    _arPoseSubscription?.cancel();
     _posProvider.dispose();
     _pulseCtrl.dispose();
+    _arService.clearNodeAnchors();
+    _arService.clearNavigationRoute();
+    _arService.stopARSession();
+    _arService.dispose();
     super.dispose();
   }
 
   // ── Node management ───────────────────────────────────────────────────────
 
-  void _addNode() {
+  void _addNode() async {
     final pos = _posProvider.currentPose.position;
 
-    // ENFORCE MINIMUM DISTANCE: Do not allow dropping nodes closer than 2.0m
+    // MINIMUM DISTANCE: Avoid overlapping identical node positions (< 0.8m)
     if (_nodes.isNotEmpty) {
       final lastNode = _nodes.last;
       final dx = pos.x - lastNode.x;
       final dz = pos.z - lastNode.z;
       final distFromLast = sqrt(dx * dx + dz * dz);
 
-      if (distFromLast < 2.0) {
+      if (distFromLast < 0.8) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              '⚠️ Walk at least 2.0m before dropping the next node! (Currently ${distFromLast.toStringAsFixed(1)}m away)',
+              '⚠️ Move at least 0.8m before dropping next node (Currently ${distFromLast.toStringAsFixed(1)}m away)',
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             backgroundColor: AppColors.warning,
-            duration: const Duration(milliseconds: 1800),
+            duration: const Duration(milliseconds: 1400),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -120,12 +215,21 @@ class _MapperScreenState extends State<MapperScreen>
 
     setState(() {
       _nodes.add(Node(id: id, name: name, x: pos.x, y: pos.y, z: pos.z));
+      _placedAnchorCount++;
     });
+
+    // If AR mode is active, drop native 3D spatial anchor and update ribbon
+    if (_isARMode) {
+      await _arService.addNodeAnchor(pos.x, pos.y, pos.z);
+      _syncARRouteRibbon();
+    }
 
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('📍 $name added at (${pos.x.toStringAsFixed(1)}, ${pos.z.toStringAsFixed(1)})'),
+        content: Text(_isARMode
+            ? '📍 3D AR Beacon $name dropped at (${pos.x.toStringAsFixed(1)}, ${pos.z.toStringAsFixed(1)})'
+            : '📍 $name added at (${pos.x.toStringAsFixed(1)}, ${pos.z.toStringAsFixed(1)})'),
         duration: const Duration(milliseconds: 1000),
         backgroundColor: AppColors.primaryBlue,
         behavior: SnackBarBehavior.floating,
@@ -133,9 +237,20 @@ class _MapperScreenState extends State<MapperScreen>
     );
   }
 
-  void _undoLast() {
+  void _undoLast() async {
     if (_nodes.isEmpty) return;
-    setState(() => _nodes.removeLast());
+    setState(() {
+      _nodes.removeLast();
+      if (_placedAnchorCount > 0) _placedAnchorCount--;
+    });
+
+    if (_isARMode) {
+      await _arService.clearNodeAnchors();
+      for (final n in _nodes) {
+        await _arService.addNodeAnchor(n.x, n.y, n.z);
+      }
+      _syncARRouteRibbon();
+    }
   }
 
   void _markDestination() {
@@ -295,6 +410,14 @@ class _MapperScreenState extends State<MapperScreen>
           ],
         ),
         actions: [
+          IconButton(
+            icon: Icon(
+              _isARMode ? Icons.view_in_ar_rounded : Icons.map_rounded,
+              color: _isARMode ? AppColors.primaryBlue : AppColors.textMuted,
+            ),
+            tooltip: _isARMode ? 'Switch to 2D Map View' : 'Switch to 3D ARCore View',
+            onPressed: _toggleARMode,
+          ),
           if (_nodes.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.qr_code_2_rounded, color: AppColors.primaryBlue),
@@ -323,9 +446,9 @@ class _MapperScreenState extends State<MapperScreen>
       ),
       body: Column(
         children: [
-          // ── Real-time Top-Down Walk Canvas & Telemetry ──────────────────
+          // ── Real-time Walk View: 3D AR Surface or Top-Down 2D Canvas ────
           Container(
-            height: 210,
+            height: _isARMode ? 260 : 210,
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(
               color: const Color(0xFF0F172A),
@@ -340,17 +463,25 @@ class _MapperScreenState extends State<MapperScreen>
             ),
             child: Stack(
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(18),
-                  child: CustomPaint(
-                    size: const Size(double.infinity, 210),
-                    painter: _MapperRadarPainter(
-                      nodes: _nodes,
-                      trail: _liveTrail,
-                      currentPose: curPose,
+                if (_isARMode)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(18),
+                    child: const SizedBox.expand(
+                      child: NativeARViewWidget(),
+                    ),
+                  )
+                else
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(18),
+                    child: CustomPaint(
+                      size: const Size(double.infinity, 210),
+                      painter: _MapperRadarPainter(
+                        nodes: _nodes,
+                        trail: _liveTrail,
+                        currentPose: curPose,
+                      ),
                     ),
                   ),
-                ),
                 // Telemetry overlay badge
                 Positioned(
                   top: 10,
@@ -368,15 +499,20 @@ class _MapperScreenState extends State<MapperScreen>
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.explore_rounded, color: Colors.cyanAccent, size: 14),
+                            Icon(
+                              _isARMode ? Icons.view_in_ar_rounded : Icons.explore_rounded,
+                              color: _isARMode ? Colors.cyanAccent : Colors.amberAccent,
+                              size: 14,
+                            ),
                             const SizedBox(width: 5),
                             Text(
-                              '${headingDeg.toStringAsFixed(0)}°  |  ${_posProvider.totalSteps} steps',
+                              _isARMode
+                                  ? '3D ARCore | ${_nodes.length} Beacons'
+                                  : '${headingDeg.toStringAsFixed(0)}°  |  ${_posProvider.totalSteps} steps',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
-                                fontFamily: 'monospace',
                               ),
                             ),
                           ],
@@ -483,7 +619,7 @@ class _MapperScreenState extends State<MapperScreen>
       final dx = curPos.x - lastNode.x;
       final dz = curPos.z - lastNode.z;
       distFromLast = sqrt(dx * dx + dz * dz);
-      canDrop = distFromLast >= 2.0;
+      canDrop = distFromLast >= 0.8;
     } else {
       canDrop = true;
     }
@@ -510,7 +646,7 @@ class _MapperScreenState extends State<MapperScreen>
         ? 'Stand at entrance and tap ➕ to drop Entrance Node.'
         : canDrop
             ? '✅ Ready to drop node (${distFromLast.toStringAsFixed(1)} m from last node)'
-            : '🚶 Walk ${(2.0 - distFromLast).toStringAsFixed(1)} m more to drop next node (${distFromLast.toStringAsFixed(1)} m / 2.0 m)';
+            : '🚶 Walk ${(0.8 - distFromLast).clamp(0.0, 0.8).toStringAsFixed(1)} m more to drop next node (${distFromLast.toStringAsFixed(1)} m / 0.8 m)';
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),

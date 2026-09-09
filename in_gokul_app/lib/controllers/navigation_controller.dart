@@ -66,9 +66,9 @@ class NavigationController extends ChangeNotifier {
     required this.positionProvider,
     required this.alignmentService,
     this.corridorWidthM = MapMatcher.defaultCorridorWidthM,
-    this.waypointArrivalThreshold = 1.2,
-    this.destinationArrivalThreshold = 1.2,
-    this.arrivalFrameThreshold = 15,
+    this.waypointArrivalThreshold = 1.8,
+    this.destinationArrivalThreshold = 1.5,
+    this.arrivalFrameThreshold = 3,
     this.graph,
     this.onRouteRecalculated,
   }) : path = List.from(routeResult.path) {
@@ -271,13 +271,12 @@ class NavigationController extends ChangeNotifier {
 
     final threshold = isLastLeg ? destinationArrivalThreshold : waypointArrivalThreshold;
     final isCloseEnough = dist <= threshold;
-    final hasProgressed = progress >= 0.85;
+    final hasProgressed = progress >= 0.75;
 
-    // STRICT MULTI-CONDITION ARRIVAL:
-    // 1. Proximity threshold (dist <= 0.8m - 1.2m)
-    // 2. User has walked at least 85% of active corridor segment
-    // 3. User remains stable for 15 consecutive frames (~0.75s)
-    if (isCloseEnough && hasProgressed) {
+    // Advance waypoint if either user is physically close to target node or has walked the segment and is near the turn
+    final canAdvance = isCloseEnough || (hasProgressed && dist <= threshold * 1.3);
+
+    if (canAdvance) {
       _consecutiveArrivalFrames++;
       if (_consecutiveArrivalFrames >= arrivalFrameThreshold) {
         _consecutiveArrivalFrames = 0;

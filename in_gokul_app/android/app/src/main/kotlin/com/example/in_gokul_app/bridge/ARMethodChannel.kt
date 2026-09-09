@@ -66,6 +66,10 @@ class ARMethodChannel(
             "startARSession" -> {
                 result.success(arCoreManager.startARCoreSession())
             }
+            "resumeARSession" -> {
+                arCoreManager.resumeARCoreSession()
+                result.success(true)
+            }
             "pauseARSession" -> {
                 arCoreManager.pauseARCoreSession()
                 result.success(true)

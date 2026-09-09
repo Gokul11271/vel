@@ -12,6 +12,9 @@ import '../ar/ar_path_painter.dart';
 import '../ar/breadcrumb_painter.dart';
 import '../services/camera_service.dart';
 import '../tracking/native_ar_position_provider.dart';
+import '../models/ar_pose.dart';
+import '../services/android_ar_service.dart';
+import '../widgets/native_ar_view_widget.dart';
 import '../theme/app_theme.dart';
 import '../widgets/debug_overlay.dart';
 import '../widgets/fps_counter.dart';
@@ -44,6 +47,10 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
   final CameraService _cameraService = CameraService();
   final FpsCounter _fpsCounter = FpsCounter();
   StreamSubscription<bool>? _anomalySubscription;
+
+  final AndroidARService _arService = AndroidARService();
+  bool _isNativeARSupported = false;
+  bool _useNativeAR = false;
 
   bool _destinationNavigated = false;
   bool _isCameraReady = false;
@@ -93,6 +100,62 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
     }
 
     _initCamera();
+    _initNativeAR();
+  }
+
+  Future<void> _initNativeAR() async {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      final supported = await _arService.isARSupported();
+      if (supported) {
+        final hasPerm = await _arService.checkCameraPermission() ||
+            await _arService.requestCameraPermission();
+        if (hasPerm) {
+          final started = await _arService.startARSession();
+          if (started && mounted) {
+            setState(() {
+              _isNativeARSupported = true;
+              _useNativeAR = true;
+            });
+            _updateNativeARRoute();
+            return;
+          }
+        }
+      }
+    }
+  }
+
+  void _updateNativeARRoute() {
+    if (!_useNativeAR) return;
+    final points = widget.controller.path
+        .map((n) => Vector3D(x: n.x, y: n.y, z: n.z))
+        .toList();
+    final dest = Vector3D(
+      x: widget.targetNode.x,
+      y: widget.targetNode.y,
+      z: widget.targetNode.z,
+    );
+    _arService.updateNavigationRoute(points, dest);
+  }
+
+  void _toggleARMode() async {
+    if (!_isNativeARSupported) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⚠️ Native ARCore is not supported or not enabled on this device.'),
+          backgroundColor: AppColors.warning,
+        ),
+      );
+      return;
+    }
+    setState(() {
+      _useNativeAR = !_useNativeAR;
+    });
+    if (_useNativeAR) {
+      await _arService.resumeARSession();
+      _updateNativeARRoute();
+    } else {
+      await _arService.pauseARSession();
+    }
   }
 
   void _onRouteRecalculated() {
@@ -104,6 +167,7 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
       widget.controller.nextTargetNode,
       currentStepIndex: widget.controller.currentStepIndex,
     );
+    _updateNativeARRoute();
   }
 
   void _showFigure8CalibrationGuide({bool isAutoTriggered = false}) {
@@ -129,9 +193,15 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _cameraService.initializeCamera(force: true).then((ready) {
-        if (mounted) setState(() => _isCameraReady = ready);
-      });
+      if (_useNativeAR) {
+        _arService.resumeARSession();
+      } else {
+        _cameraService.initializeCamera(force: true).then((ready) {
+          if (mounted) setState(() => _isCameraReady = ready);
+        });
+      }
+    } else if (state == AppLifecycleState.paused && _useNativeAR) {
+      _arService.pauseARSession();
     }
   }
 
@@ -234,6 +304,9 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
     widget.controller.dispose();
     widget.arManager.dispose();
     widget.controller.positionProvider.dispose();
+    _arService.clearNavigationRoute();
+    _arService.stopARSession();
+    _arService.dispose();
     super.dispose();
   }
 
@@ -445,8 +518,12 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
           body: Stack(
             fit: StackFit.expand,
             children: [
-              // ── 1. Live Camera ───────────────────────────────────────────
-              if (_isCameraReady &&
+              // ── 1. Live AR Stream: Native ARCore (OpenGL ES 3D Ribbon) or CameraPreview ──
+              if (_useNativeAR)
+                const SizedBox.expand(
+                  child: NativeARViewWidget(),
+                )
+              else if (_isCameraReady &&
                   _cameraService.controller != null &&
                   _cameraService.controller!.value.isInitialized)
                 SizedBox.expand(
@@ -768,6 +845,48 @@ class _ArNavigationScreenState extends State<ArNavigationScreen>
                           ),
                           _TrackingBadge(
                               isGood: isTrackingGood, isLost: isTrackingLost),
+                          const SizedBox(width: 4),
+                          // 3D ARCore toggle button
+                          GestureDetector(
+                            onTap: _toggleARMode,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: _useNativeAR
+                                    ? Colors.cyan.withValues(alpha: 0.35)
+                                    : Colors.white12,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                    color: _useNativeAR
+                                        ? Colors.cyanAccent
+                                        : Colors.white24),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                      _useNativeAR
+                                          ? Icons.view_in_ar_rounded
+                                          : Icons.videocam_rounded,
+                                      size: 14,
+                                      color: _useNativeAR
+                                          ? Colors.cyanAccent
+                                          : Colors.white70),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _useNativeAR ? '3D AR' : '2D AR',
+                                    style: TextStyle(
+                                        color: _useNativeAR
+                                            ? Colors.cyanAccent
+                                            : Colors.white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                           const SizedBox(width: 4),
                           // Re-align button
                           GestureDetector(

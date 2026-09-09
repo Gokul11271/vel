@@ -8,7 +8,17 @@ class GraphService {
 
   Graph? get graph => _graph;
 
+  /// Initialises the graph.
+  /// Priority: 1) Device-saved map from Mapper  2) Bundled asset fallback.
   Future<Graph> init() async {
+    // Try loading the mapper's saved map first (same-device mapping → navigation)
+    final savedMap = await JsonService.loadSavedMap();
+    if (savedMap != null && savedMap.nodes.length >= 2) {
+      _graph = savedMap.toGraph();
+      return _graph!;
+    }
+
+    // Fallback to bundled asset
     _graph = await JsonService.loadNavigationGraph();
     return _graph!;
   }
